@@ -11,24 +11,24 @@ BRANCH="antigravity2api"
 TARGET_DIR="antigravity2api-nodejs"
 APP_NAME="antigravity2api"
 
-# 2. 自动检测与安装系统基础依赖 (curl, git, openssl, bind-utils/dnsutils)
-echo "[1/8] 检查系统基础依赖 (curl, git, openssl, dig)..."
-if ! command -v curl &> /dev/null || ! command -v git &> /dev/null || ! command -v openssl &> /dev/null || ! command -v dig &> /dev/null; then
+# 2. 自动检测与安装系统基础依赖 (curl, git)
+echo "[1/7] 检查系统基础依赖 (curl, git)..."
+if ! command -v curl &> /dev/null || ! command -v git &> /dev/null; then
     echo "正在安装基础系统依赖..."
     if command -v apt-get &> /dev/null; then
-        sudo apt-get update -y && sudo apt-get install -y curl git openssl dnsutils
+        sudo apt-get update -y && sudo apt-get install -y curl git
     elif command -v yum &> /dev/null; then
-        sudo yum install -y curl git openssl bind-utils
+        sudo yum install -y curl git
     elif command -v dnf &> /dev/null; then
-        sudo dnf install -y curl git openssl bind-utils
+        sudo dnf install -y curl git
     elif command -v apk &> /dev/null; then
-        sudo apk add curl git openssl bind-tools
+        sudo apk add curl git
     fi
 fi
 
 # 3. 自动克隆或进入确切的项目目录
 echo
-echo "[2/8] 获取项目代码与定位工作目录..."
+echo "[2/7] 获取项目代码与定位工作目录..."
 if [ -f "package.json" ] && grep -q "antigravity" package.json 2>/dev/null; then
     echo "✓ 当前目录已被识别为 Antigravity 项目目录: $(pwd)"
 elif [ -d "$TARGET_DIR" ]; then
@@ -55,7 +55,7 @@ fi
 
 # 4. 自动检测与安装 Node.js (如缺失，自动安装 Node.js LTS)
 echo
-echo "[3/8] 检查 Node.js 环境..."
+echo "[3/7] 检查 Node.js 环境..."
 if ! command -v node &> /dev/null; then
     echo "⚠️ 未检测到 Node.js，正在自动为您安装 Node.js LTS (v20)..."
     if command -v apt-get &> /dev/null; then
@@ -75,124 +75,18 @@ echo "✓ Node.js 环境正常: ${NODE_VER}"
 
 # 5. 安装 Node.js 项目依赖
 echo
-echo "[4/8] 安装项目 NPM 依赖..."
+echo "[4/7] 安装项目 NPM 依赖..."
 npm install
 if [ $? -ne 0 ]; then
     echo "❌ NPM 依赖安装失败，请检查网络或源配置。"
     exit 1
 fi
 
-# 6. 自动创建并配置文件及 HTTPS SSL 域名处理
+# 6. 配置管理员信息与凭据
 echo
-echo "[5/8] 配置管理员信息、凭据与 HTTPS 域名..."
+echo "[5/7] 配置管理员信息与凭据..."
 
 SERVER_PUBLIC_IP=$(curl -s --connect-timeout 3 https://api.ipify.org || curl -s --connect-timeout 3 https://ifconfig.me || curl -s --connect-timeout 3 https://ipinfo.io/ip || echo "")
-
-read -p "请输入要绑定的域名 (如果为空，默认为自签 IP 证书): " DOMAIN_INPUT
-DOMAIN_INPUT=$(echo "$DOMAIN_INPUT" | tr -d ' ')
-
-CERTS_DIR="${PROJECT_ABS_PATH}/data/certs"
-mkdir -p "${CERTS_DIR}"
-
-if [ -z "$DOMAIN_INPUT" ]; then
-    echo "💡 未输入域名，自动为公网 IP (${SERVER_PUBLIC_IP:-127.0.0.1}) 生成自签 IP 证书..."
-    TARGET_IP="${SERVER_PUBLIC_IP:-127.0.0.1}"
-    
-    # 动态生成 openssl 自签证书
-    cat <<EOF > "${CERTS_DIR}/openssl_tmp.cnf"
-[req]
-distinguished_name = req_distinguished_name
-x509_extensions = v3_req
-prompt = no
-[req_distinguished_name]
-C = CN
-ST = State
-L = City
-O = Antigravity
-CN = ${TARGET_IP}
-[v3_req]
-keyUsage = critical, digitalSignature, keyEncipherment
-extendedKeyUsage = serverAuth
-subjectAltName = IP:${TARGET_IP}
-EOF
-
-    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout "${CERTS_DIR}/server.key" -out "${CERTS_DIR}/server.crt" -config "${CERTS_DIR}/openssl_tmp.cnf" >/dev/null 2>&1
-    rm -f "${CERTS_DIR}/openssl_tmp.cnf"
-
-    cat <<EOF > "${CERTS_DIR}/cert_info.json"
-{
-  "domain": "${TARGET_IP}",
-  "type": "self-signed",
-  "autoRenew": false,
-  "updatedAt": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-}
-EOF
-    echo "✓ 已生成自签 IP 证书 (${CERTS_DIR}/server.crt, ${CERTS_DIR}/server.key)"
-else
-    echo "🔍 检查域名 ${DOMAIN_INPUT} 的 DNS 解析..."
-    DOMAIN_RESOLVED_IPS=$(dig +short "$DOMAIN_INPUT" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
-    
-    IS_MATCH=0
-    if [ -n "$SERVER_PUBLIC_IP" ] && [ -n "$DOMAIN_RESOLVED_IPS" ]; then
-        for ip in $DOMAIN_RESOLVED_IPS; do
-            if [ "$ip" = "$SERVER_PUBLIC_IP" ]; then
-                IS_MATCH=1
-                break
-            fi
-        done
-    fi
-
-    if [ "$IS_MATCH" -eq 0 ]; then
-        echo "❌ 错误: 域名 ${DOMAIN_INPUT} 未正确解析到当前服务器公网 IP (${SERVER_PUBLIC_IP:-未检测到})！"
-        echo "   域名解析结果: ${DOMAIN_RESOLVED_IPS:-解析失败/无响应}"
-        echo "   请先去域名 DNS 控制台将 A 记录指向 ${SERVER_PUBLIC_IP} 后重新运行脚本。"
-        exit 1
-    fi
-
-    echo "✓ 域名 DNS 校验通过！已解析到当前服务器 IP: ${SERVER_PUBLIC_IP}"
-    echo "🔐 开始使用 acme.sh 签发官方 SSL 证书..."
-
-    # 检查并安装 acme.sh
-    if [ ! -f "$HOME/.acme.sh/acme.sh" ]; then
-        echo "正在安装 acme.sh 证书自动化工具..."
-        curl https://get.acme.sh | sh -s email=admin@${DOMAIN_INPUT} >/dev/null 2>&1
-    fi
-    ACME_BIN="$HOME/.acme.sh/acme.sh"
-
-    # 申请并安装证书
-    "$ACME_BIN" --issue -d "$DOMAIN_INPUT" --standalone --httpport 80 --force
-    if [ $? -ne 0 ]; then
-        echo "❌ 证书签发失败！请检查 80 端口是否被占用或防火墙设置。"
-        exit 1
-    fi
-
-    "$ACME_BIN" --install-cert -d "$DOMAIN_INPUT" \
-        --key-file "${CERTS_DIR}/server.key" \
-        --fullchain-file "${CERTS_DIR}/server.crt"
-
-    cat <<EOF > "${CERTS_DIR}/cert_info.json"
-{
-  "domain": "${DOMAIN_INPUT}",
-  "type": "acme",
-  "autoRenew": true,
-  "updatedAt": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-}
-EOF
-    echo "🎉 SSL 证书已成功签发并安装！"
-
-    # 将域名更新写入 config.json
-    if [ -f "config.json" ]; then
-        node -e "
-            const fs = require('fs');
-            try {
-                const conf = JSON.parse(fs.readFileSync('config.json', 'utf8'));
-                conf.server = conf.server || {};
-                conf.server.domain = '$DOMAIN_INPUT';
-                fs.writeFileSync('config.json', JSON.stringify(conf, null, 2), 'utf8');
-            } catch (e) {}
-        "
-    fi
-fi
 
 if [ ! -f ".env" ]; then
     if [ -f ".env.example" ]; then
@@ -230,7 +124,7 @@ fi
 
 # 7. 检测并自动全局安装 PM2
 echo
-echo "[6/8] 检查并安装 PM2 进程管理器..."
+echo "[6/7] 检查并安装 PM2 进程管理器..."
 if ! command -v pm2 &> /dev/null; then
     echo "正在全局安装 PM2..."
     npm install -g pm2
@@ -244,7 +138,7 @@ fi
 
 # 8. 加入 PM2 服务与开机自启动
 echo
-echo "[7/8] 启动 PM2 进程守护并配置自启动..."
+echo "[7/7] 启动 PM2 进程守护并配置自启动..."
 # 清理死进程，确保以固定的绝对路径启动
 pm2 delete "$APP_NAME" > /dev/null 2>&1 || true
 
@@ -254,13 +148,12 @@ pm2 start "${PROJECT_ABS_PATH}/src/server/index.js" --name "$APP_NAME" --cwd "${
 pm2 save
 pm2 startup 2>/dev/null || echo "💡 提示: 请复制下方系统提示的命令以完成开机自启安装"
 
-# 动态构建 HTTPS 访问地址
-if [ -n "$DOMAIN_INPUT" ]; then
-    PUBLIC_URL="https://${DOMAIN_INPUT}"
-elif [ -n "$SERVER_PUBLIC_IP" ]; then
-    PUBLIC_URL="https://${SERVER_PUBLIC_IP}"
+# 构建 HTTP 访问地址 (默认 8045 端口)
+PORT=8045
+if [ -n "$SERVER_PUBLIC_IP" ]; then
+    PUBLIC_URL="http://${SERVER_PUBLIC_IP}:${PORT}"
 else
-    PUBLIC_URL="https://您的服务器IP"
+    PUBLIC_URL="http://您的服务器IP:${PORT}"
 fi
 
 echo
@@ -271,9 +164,10 @@ echo
 echo "📂 项目安装路径："
 echo "   - 绝对路径: ${PROJECT_ABS_PATH}"
 echo
-echo "🌐 服务访问信息 (全站强制 443 HTTPS 端口)："
+echo "🌐 服务访问信息 (HTTP 8045 端口)："
 echo "   - 公网管理后台: ${PUBLIC_URL}"
-echo "   - 本地管理后台: https://127.0.0.1"
+echo "   - 本地管理后台: http://127.0.0.1:${PORT}"
+echo "   - API 基础地址: http://127.0.0.1:${PORT}/v1"
 echo "   - 管理员账号:   $ADMIN_USER"
 echo "   - 管理员密码:   $ADMIN_PASS"
 echo "   - 初始 API 密钥: $FINAL_API_KEY"
