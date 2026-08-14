@@ -184,6 +184,9 @@ class LogWebSocketServer {
 
         // 追加写入
         try {
+            if (!fs.existsSync(LOG_DIR)) {
+                fs.mkdirSync(LOG_DIR, { recursive: true });
+            }
             fs.appendFileSync(LOG_FILE, content, 'utf8');
             this.currentLogSize += contentSize;
         } catch (error) {

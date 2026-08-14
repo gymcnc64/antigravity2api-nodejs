@@ -63,7 +63,15 @@ export function getDataDir() {
     }
   }
   // 开发环境
-  return path.join(__dirname, '..', '..', 'data');
+  const dataDir = path.join(__dirname, '..', '..', 'data');
+  try {
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+  } catch (e) {
+    // 忽略目录创建错误
+  }
+  return dataDir;
 }
 
 /**
