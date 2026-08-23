@@ -288,7 +288,7 @@ const DEFAULT_API_CONFIGS = {
 const DEFAULT_UPSTREAM_CANDIDATES = ['production', 'daily', 'sandbox'];
 
 // 默认 IDE 版本号（config.json 中无版本记录时使用）
-const DEFAULT_IDE_VERSION = '1.22.2';
+const DEFAULT_IDE_VERSION = '2.5.5';
 
 const DEFAULT_API_UNLEASH = {
     register: "https://antigravity-unleash.goog/api/client/register",
@@ -320,7 +320,11 @@ function getActiveApiConfig(jsonConfig, upstreamCfg) {
   const upstreamEndpoint = upstreamCfg.api?.[apiUse] || {};
   const hardcodedEndpoint = DEFAULT_API_CONFIGS[apiUse] || DEFAULT_API_CONFIGS.production;
   const unleash = upstreamCfg.api?.unleash || DEFAULT_API_UNLEASH;
-  const ideVersion = jsonConfig.api?.version || DEFAULT_IDE_VERSION;
+  // 使用 config.json 中的版本号，但以代码内置版本为下限（防止过期自动更新器数据把版本拉低）
+  const cachedIdeVersion = jsonConfig.api?.version || '';
+  const ideVersion = cachedIdeVersion && compareVersions(cachedIdeVersion, DEFAULT_IDE_VERSION) > 0
+    ? cachedIdeVersion
+    : DEFAULT_IDE_VERSION;
 
   // 构建 upstream fallback candidates：用户选的排第一，其余按默认顺序补齐（去重）
   const defaultCandidateNames = upstreamCfg.upstreamCandidates || DEFAULT_UPSTREAM_CANDIDATES;
