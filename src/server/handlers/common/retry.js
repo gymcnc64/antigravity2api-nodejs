@@ -3,6 +3,7 @@ import { DEFAULT_RETRY_INTERVAL_MS, LONG_COOLDOWN_THRESHOLD } from '../../../con
 import tokenCooldownManager from '../../../auth/token_cooldown_manager.js';
 import { getGroupKey } from '../../../utils/modelGroups.js';
 import { hasOtherAvailableModelGroups, getAvailableModelGroups } from '../../../utils/tokenQuotaHelper.js';
+import { isGeoLocationRestrictedError } from '../../../api/upstreamError.js';
 import logger from '../../../utils/logger.js';
 
 /**
@@ -288,12 +289,14 @@ export async function with429Retry(fn, maxRetries, options = {}, legacyOnAttempt
       return await fn(attempt, shouldUseCredits);
     } catch (error) {
       const status = getStatus(error);
-      if (status !== 429 && status !== 503) {
+      // 地区限制（400 FAILED_PRECONDITION）与 429/503 一样可重试：换一个 token 再试
+      const geoRestricted = isGeoLocationRestrictedError(error);
+      if (status !== 429 && status !== 503 && !geoRestricted) {
         throw error;
       }
 
       const hint = getRetryHint(error);
-      const errorType = status === 503 ? '503' : '429';
+      const errorType = geoRestricted ? '400 地区限制' : (status === 503 ? '503' : '429');
       const modelId = retryOptions.modelId || null;
       const previousTokenId = getCurrentTokenId(retryOptions);
 

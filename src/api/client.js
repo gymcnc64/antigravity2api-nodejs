@@ -28,10 +28,11 @@ import {
   dumpStreamResponse,
   dumpFinalRawResponse
 } from './debugDump.js';
-import { getUpstreamStatus, readUpstreamErrorBody, isCallerDoesNotHavePermission } from './upstreamError.js';
+import { getUpstreamStatus, readUpstreamErrorBody, isCallerDoesNotHavePermission, isGeoLocationRestrictedError } from './upstreamError.js';
 import { createStreamLineProcessor } from './streamLineProcessor.js';
 import { runSseStream, postJsonAndParse } from './geminiTransport.js';
 import { parseGeminiCandidateParts, toOpenAIUsage } from './geminiResponseParser.js';
+import tokenCooldownManager from '../auth/token_cooldown_manager.js';
 
 // ==================== Token 计时器管理 ====================
 const tokenTimers = new Map(); // { tokenKey: { lastUsed: timestamp, intervalId: intervalId } }
@@ -253,7 +254,7 @@ async function withUpstreamFallback(fn) {
 }
 
 // 统一错误处理
-async function handleApiError(error, token, dumpId = null) {
+async function handleApiError(error, token, dumpId = null, modelName = null) {
   const status = getUpstreamStatus(error);
   const errorBody = await readUpstreamErrorBody(error);
 
@@ -269,7 +270,46 @@ async function handleApiError(error, token, dumpId = null) {
     throw createApiError(`该账号没有使用权限，已自动禁用。错误详情: ${errorBody}`, status, errorBody);
   }
 
+  // 地区限制：Google 判定该账号/位置不受支持（400 FAILED_PRECONDITION）
+  // 隔离该 token 一段时间，避免轮询继续命中它导致请求时好时坏
+  if (status === 400 && isGeoLocationRestrictedError(error)) {
+    await quarantineGeoBlockedToken(token, modelName);
+    throw createApiError(`该账号所在地区不受支持，已自动隔离并切换其他账号。错误详情: ${errorBody}`, status, errorBody);
+  }
+
   throw createApiError(`API请求失败 (${status}): ${errorBody}`, status, errorBody);
+}
+
+// 地区受限账号的隔离时长：24 小时（到期后自动重新尝试）
+const GEO_QUARANTINE_MS = 24 * 60 * 60 * 1000;
+// 每个模型组取一个代表性模型名，用于对全部组设置冷却
+const GROUP_SAMPLE_MODELS = {
+  claude: 'claude-sonnet-4-6',
+  gemini: 'gemini-3.7-flash',
+  banana: 'gemini-3.1-flash-image',
+  other: 'other-model'
+};
+
+/**
+ * 隔离被 Google 判定地区不受支持的 token（覆盖全部模型组）
+ */
+async function quarantineGeoBlockedToken(token, modelName = null) {
+  try {
+    const tokenId = await tokenManager.getTokenId(token);
+    if (!tokenId) return;
+
+    const until = Date.now() + GEO_QUARANTINE_MS;
+    for (const group of Object.keys(GROUP_SAMPLE_MODELS)) {
+      tokenCooldownManager.setCooldown(tokenId, GROUP_SAMPLE_MODELS[group], until);
+    }
+    const resetDate = new Date(until).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+    logger.warn(
+      `[GeoQuarantine] Token ${token?.email || tokenId} 所在地区不受支持（模型: ${modelName || 'unknown'}），` +
+      `已隔离全部模型组，将在 ${resetDate} 自动恢复`
+    );
+  } catch (e) {
+    logger.warn('[GeoQuarantine] 隔离 token 失败:', e.message);
+  }
 }
 
 
@@ -343,7 +383,7 @@ export async function generateAssistantResponse(requestBody, token, callback) {
     sendLog(token, num, trajectoryId, conversationId, messageId).catch(err => logger.warn('发送log失败:', err.message));
     sendCheckPoint(token).catch(err => logger.warn('发送checkPoint失败:', err.message));;
   } catch (error) {
-    await handleApiError(error, token, dumpId);
+    await handleApiError(error, token, dumpId, modelName);
   }
 }
 
@@ -515,7 +555,7 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
     sendRecordTrajectoryAnalytics(token, num, trajectoryId, messageId, conversationId, modelName).catch(err => logger.warn('发送轨迹分析失败:', err.message));
     sendLog(token, num, trajectoryId, conversationId, messageId).catch(err => logger.warn('发送log失败:', err.message));
   } catch (error) {
-    await handleApiError(error, token, dumpId);
+    await handleApiError(error, token, dumpId, modelName);
   }
   //console.log(JSON.stringify(data));
   const parts = data.response?.candidates?.[0]?.content?.parts || [];
@@ -588,7 +628,7 @@ export async function generateImageForSD(requestBody, token) {
     });
     data = result.data;
   } catch (error) {
-    await handleApiError(error, token);
+    await handleApiError(error, token, null, modelName);
   }
   sendRecordCodeAssistMetrics(token, trajectoryId).catch(err => logger.warn('发送RecordCodeAssistMetrics失败:', err.message));
   sendRecordTrajectoryAnalytics(token, num, trajectoryId, messageId, conversationId, modelName).catch(err => logger.warn('发送轨迹分析失败:', err.message));

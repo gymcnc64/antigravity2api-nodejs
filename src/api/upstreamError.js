@@ -44,3 +44,19 @@ export function isCallerDoesNotHavePermission(errorBody) {
     return String(errorBody).includes('The caller does not');
   }
 }
+
+/**
+ * 判断错误是否为 Google 的地区限制（400 FAILED_PRECONDITION "User location is not supported"）
+ * @param {Error} error - 上游错误对象
+ * @returns {boolean}
+ */
+export function isGeoLocationRestrictedError(error) {
+  if (!error) return false;
+  const parts = [
+    error?.message,
+    typeof error?.rawBody === 'string' ? error.rawBody : '',
+    error?.rawBody && typeof error.rawBody === 'object' ? JSON.stringify(error.rawBody) : '',
+    error?.response?.data ? JSON.stringify(error.response.data) : ''
+  ].join(' ');
+  return /location is not supported/i.test(parts);
+}
