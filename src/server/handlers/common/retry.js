@@ -3,7 +3,7 @@ import { DEFAULT_RETRY_INTERVAL_MS, LONG_COOLDOWN_THRESHOLD } from '../../../con
 import tokenCooldownManager from '../../../auth/token_cooldown_manager.js';
 import { getGroupKey } from '../../../utils/modelGroups.js';
 import { hasOtherAvailableModelGroups, getAvailableModelGroups } from '../../../utils/tokenQuotaHelper.js';
-import { isGeoLocationRestrictedError } from '../../../api/upstreamError.js';
+import { isGeoLocationRestrictedError, safeStringify } from '../../../api/upstreamError.js';
 import logger from '../../../utils/logger.js';
 
 /**
@@ -71,8 +71,10 @@ function extractUpstreamErrorBody(error) {
   if (error?.isUpstreamApiError && error.rawBody) {
     return tryParseJson(error.rawBody) || error.rawBody;
   }
-  if (error?.response?.data) {
-    return tryParseJson(error.response.data) || error.response.data;
+  const data = error?.response?.data;
+  // 如果是流对象或有 socket 属性（循环引用），不提取为 body
+  if (data && !data.readable && !data.socket && !data._readableState) {
+    return tryParseJson(data) || data;
   }
   return tryParseJson(error?.message);
 }
@@ -162,11 +164,8 @@ export function getRetryHint(error) {
 
 function stringifyErrorBody(body, fallbackMessage) {
   if (typeof body === 'string') return body;
-  try {
-    return JSON.stringify(body || fallbackMessage || '');
-  } catch {
-    return String(fallbackMessage || '');
-  }
+  const str = safeStringify(body);
+  return str || String(fallbackMessage || '');
 }
 
 function hasQuotaExhaustionSignal(error, hint) {

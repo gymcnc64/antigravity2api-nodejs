@@ -2,6 +2,30 @@ export function getUpstreamStatus(error) {
   return error?.response?.status || error?.status || error?.statusCode || 500;
 }
 
+/**
+ * 安全地序列化对象为字符串，防止循环引用导致异常（如 IncomingMessage/Stream）
+ * @param {any} obj
+ * @param {number} [space=0]
+ * @returns {string}
+ */
+export function safeStringify(obj, space = 0) {
+  if (obj === undefined || obj === null) return '';
+  if (typeof obj === 'string') return obj;
+  if (typeof obj !== 'object') return String(obj);
+
+  // 如果是 Readable 流或有 socket 属性的对象（如 IncomingMessage），直接跳过序列化
+  if (obj.readable || obj.socket || obj._readableState) {
+    return '';
+  }
+
+  try {
+    return space > 0 ? JSON.stringify(obj, null, space) : JSON.stringify(obj);
+  } catch {
+    // 存在循环引用等异常时回退
+    return String(obj.message || obj.statusText || '');
+  }
+}
+
 async function readReadableStreamToString(readable) {
   const chunks = [];
   for await (const chunk of readable) {
@@ -25,11 +49,7 @@ export async function readUpstreamErrorBody(error) {
   }
 
   if (typeof data === 'object' && data !== null) {
-    try {
-      return JSON.stringify(data, null, 2);
-    } catch {
-      return String(data);
-    }
+    return safeStringify(data, 2);
   }
 
   if (data !== undefined && data !== null) return String(data);
@@ -39,7 +59,8 @@ export async function readUpstreamErrorBody(error) {
 
 export function isCallerDoesNotHavePermission(errorBody) {
   try {
-    return JSON.stringify(errorBody).includes('The caller does not');
+    const text = safeStringify(errorBody);
+    return text.includes('The caller does not');
   } catch {
     return String(errorBody).includes('The caller does not');
   }
@@ -54,9 +75,8 @@ export function isGeoLocationRestrictedError(error) {
   if (!error) return false;
   const parts = [
     error?.message,
-    typeof error?.rawBody === 'string' ? error.rawBody : '',
-    error?.rawBody && typeof error.rawBody === 'object' ? JSON.stringify(error.rawBody) : '',
-    error?.response?.data ? JSON.stringify(error.response.data) : ''
+    typeof error?.rawBody === 'string' ? error.rawBody : safeStringify(error?.rawBody),
+    typeof error?.response?.data === 'string' ? error.response.data : safeStringify(error?.response?.data)
   ].join(' ');
   return /location is not supported/i.test(parts);
 }
