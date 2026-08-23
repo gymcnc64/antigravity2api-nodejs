@@ -449,8 +449,9 @@ router.post('/test-proxy', cookieAuthMiddleware, async (req, res) => {
 
   try {
     let status = 200;
+    let requester = null;
     try {
-      const requester = fingerprintRequester.create({
+      requester = fingerprintRequester.create({
         configPath,
         proxy: normalizedProxy,
         timeout: 8
@@ -460,52 +461,61 @@ router.post('/test-proxy', cookieAuthMiddleware, async (req, res) => {
         method: 'GET',
         timeout_ms: 8000
       });
-      requester.close();
       status = response.status;
     } catch (tlsError) {
-      logger.warn(`[ProxyTest] FingerprintRequester 测试失败，使用 Axios 降级重试: ${tlsError.message}`);
-      
-      const axiosConfig = {
-        method: 'GET',
-        url: testTarget,
-        timeout: 8000,
-        validateStatus: () => true
-      };
-
-      if (normalizedProxy.startsWith('socks')) {
-        // 对于 SOCKS5 代理，Axios 路径使用内置代理转换或通用链接测试
-        try {
-          const u = new URL(normalizedProxy);
-          axiosConfig.proxy = {
-            protocol: 'http',
-            host: u.hostname,
-            port: parseInt(u.port, 10)
-          };
-        } catch {
-          axiosConfig.proxy = false;
-        }
+      // 已收到 HTTP 状态码（如 Google 根路径 404）说明链路已通，视为测试成功，避免误报
+      const statusMatch = /status code (\d+)/i.exec(tlsError.message || '');
+      if (statusMatch) {
+        status = parseInt(statusMatch[1], 10);
       } else {
-        const buildConfig = buildAxiosRequestConfig({
+        logger.warn(`[ProxyTest] FingerprintRequester 测试失败，使用 Axios 降级重试: ${tlsError.message}`);
+      
+        const axiosConfig = {
           method: 'GET',
           url: testTarget,
-          timeout: 8000
-        });
-        axiosConfig.httpAgent = buildConfig.httpAgent;
-        axiosConfig.httpsAgent = buildConfig.httpsAgent;
-        try {
-          const u = new URL(normalizedProxy);
-          axiosConfig.proxy = {
-            protocol: u.protocol.replace(':', ''),
-            host: u.hostname,
-            port: parseInt(u.port, 10)
-          };
-        } catch {
-          axiosConfig.proxy = false;
-        }
-      }
+          timeout: 8000,
+          validateStatus: () => true
+        };
 
-      const axiosRes = await axios(axiosConfig);
-      status = axiosRes.status;
+        if (normalizedProxy.startsWith('socks')) {
+          // 对于 SOCKS5 代理，Axios 路径使用内置代理转换或通用链接测试
+          try {
+            const u = new URL(normalizedProxy);
+            axiosConfig.proxy = {
+              protocol: 'http',
+              host: u.hostname,
+              port: parseInt(u.port, 10)
+            };
+          } catch {
+            axiosConfig.proxy = false;
+          }
+        } else {
+          const buildConfig = buildAxiosRequestConfig({
+            method: 'GET',
+            url: testTarget,
+            timeout: 8000
+          });
+          axiosConfig.httpAgent = buildConfig.httpAgent;
+          axiosConfig.httpsAgent = buildConfig.httpsAgent;
+          try {
+            const u = new URL(normalizedProxy);
+            axiosConfig.proxy = {
+              protocol: u.protocol.replace(':', ''),
+              host: u.hostname,
+              port: parseInt(u.port, 10)
+            };
+          } catch {
+            axiosConfig.proxy = false;
+          }
+        }
+
+        const axiosRes = await axios(axiosConfig);
+        status = axiosRes.status;
+      }
+    } finally {
+      if (requester) {
+        try { requester.close(); } catch { /* 忽略关闭异常 */ }
+      }
     }
 
     const duration = Date.now() - startTime;
