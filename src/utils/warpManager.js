@@ -1,5 +1,6 @@
 import { exec } from 'child_process';
 import log from './logger.js';
+import config from '../config/config.js';
 
 class WarpManager {
   constructor() {
@@ -14,6 +15,12 @@ class WarpManager {
    * @returns {Promise<boolean>}
    */
   async restartWarp(reason = '网络请求受阻') {
+    // 如果未显式开启 autoRestartWarp，则不执行系统重启命令
+    if (config?.autoRestartWarp !== true) {
+      log.debug(`[WARP] 未开启自动重启 WARP 开关，跳过执行系统命令 (${reason})`);
+      return false;
+    }
+
     const now = Date.now();
     if (this.isRestarting) {
       log.warn(`[WARP] 已有 WARP 重启任务正在进行中，跳过重复请求 (${reason})`);
