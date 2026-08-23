@@ -9,12 +9,17 @@ import { buildAxiosRequestConfig } from './httpClient.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// 网络类故障（代理掉线等）触发降级后的冷却时间：
+// 冷却期内使用 axios 路径，到期后自动重试 TLS 指纹路径，避免永久降级
+const TLS_RETRY_COOLDOWN_MS = 60 * 1000;
+
 /**
  * 统一请求器管理类
  *
  * - 根据 config.useNativeAxios 决定使用 TLS 指纹请求器还是 axios
  * - 支持热重载：调用 reload() 后下次请求时重新初始化
  * - TLS 请求器初始化失败时自动降级到 axios
+ * - 瞬时网络故障（代理掉线）仅进入 60s 冷却，到期自动恢复 TLS 路径
  * - sendLog 等需要发送二进制 body 的场景，请直接使用 axios（TLS 请求器暂不支持二进制 body）
  */
 class RequesterManager {
@@ -22,6 +27,7 @@ class RequesterManager {
     this._tlsRequester = null;
     this._tlsInitFailed = false;
     this._initPromise = null;
+    this._tlsCooldownUntil = 0;
   }
 
   // ==================== 初始化 ====================
@@ -90,6 +96,11 @@ class RequesterManager {
     return this._tlsInitFailed || !this._tlsRequester;
   }
 
+  // 是否处于 TLS 路径冷却期（瞬时网络故障降级后）
+  get _tlsCoolingDown() {
+    return Date.now() < this._tlsCooldownUntil;
+  }
+
   /**
    * 热重载：重置请求器，下次请求时按最新 config 重新初始化
    */
@@ -100,6 +111,7 @@ class RequesterManager {
     this._tlsRequester = null;
     this._tlsInitFailed = false;
     this._initPromise = null;
+    this._tlsCooldownUntil = 0;
     logger.info('[RequesterManager] 请求器已重置，将在下次请求时按新配置重新初始化');
   }
 
@@ -129,7 +141,7 @@ class RequesterManager {
   async fetch(url, { method = 'POST', headers = {}, body = null, okStatus = [200] } = {}) {
     await this._ensureInit();
 
-    if (this._useAxios) {
+    if (this._useAxios || this._tlsCoolingDown) {
       return this._axiosFetch(url, { method, headers, body, okStatus });
     }
 
@@ -140,7 +152,8 @@ class RequesterManager {
         throw error;
       }
       logger.warn('[RequesterManager] FingerprintRequester 请求失败，自动降级使用 axios:', error.message);
-      this._tlsInitFailed = true;
+      // 瞬时网络故障：进入冷却期，到期后自动恢复 TLS 指纹路径
+      this._tlsCooldownUntil = Date.now() + TLS_RETRY_COOLDOWN_MS;
       return this._axiosFetch(url, { method, headers, body, okStatus });
     }
   }
@@ -159,7 +172,7 @@ class RequesterManager {
   async fetchStream(url, { method = 'POST', headers = {}, body = null } = {}) {
     await this._ensureInit();
 
-    if (this._useAxios) {
+    if (this._useAxios || this._tlsCoolingDown) {
       return this._axiosFetchStream(url, { method, headers, body });
     }
 
@@ -170,7 +183,7 @@ class RequesterManager {
         throw error;
       }
       logger.warn('[RequesterManager] FingerprintRequester 流式请求启动失败，自动降级使用 axios:', error.message);
-      this._tlsInitFailed = true;
+      this._tlsCooldownUntil = Date.now() + TLS_RETRY_COOLDOWN_MS;
       return this._axiosFetchStream(url, { method, headers, body });
     }
   }

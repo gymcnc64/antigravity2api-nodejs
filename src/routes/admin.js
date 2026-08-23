@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fingerprintRequester from '../requester.js';
-import { buildAxiosRequestConfig } from '../utils/httpClient.js';
+import { buildProxySetup } from '../utils/httpClient.js';
 import axios from 'axios';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -469,47 +469,16 @@ router.post('/test-proxy', cookieAuthMiddleware, async (req, res) => {
         status = parseInt(statusMatch[1], 10);
       } else {
         logger.warn(`[ProxyTest] FingerprintRequester 测试失败，使用 Axios 降级重试: ${tlsError.message}`);
-      
-        const axiosConfig = {
+
+        // 针对用户正在测试的代理地址构建 axios 配置（SOCKS5 走 SocksProxyAgent）
+        const proxySetup = buildProxySetup(normalizedProxy);
+        const axiosRes = await axios({
           method: 'GET',
           url: testTarget,
           timeout: 8000,
-          validateStatus: () => true
-        };
-
-        if (normalizedProxy.startsWith('socks')) {
-          // 对于 SOCKS5 代理，Axios 路径使用内置代理转换或通用链接测试
-          try {
-            const u = new URL(normalizedProxy);
-            axiosConfig.proxy = {
-              protocol: 'http',
-              host: u.hostname,
-              port: parseInt(u.port, 10)
-            };
-          } catch {
-            axiosConfig.proxy = false;
-          }
-        } else {
-          const buildConfig = buildAxiosRequestConfig({
-            method: 'GET',
-            url: testTarget,
-            timeout: 8000
-          });
-          axiosConfig.httpAgent = buildConfig.httpAgent;
-          axiosConfig.httpsAgent = buildConfig.httpsAgent;
-          try {
-            const u = new URL(normalizedProxy);
-            axiosConfig.proxy = {
-              protocol: u.protocol.replace(':', ''),
-              host: u.hostname,
-              port: parseInt(u.port, 10)
-            };
-          } catch {
-            axiosConfig.proxy = false;
-          }
-        }
-
-        const axiosRes = await axios(axiosConfig);
+          validateStatus: () => true,
+          ...proxySetup
+        });
         status = axiosRes.status;
       }
     } finally {

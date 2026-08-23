@@ -3,6 +3,7 @@ import dns from 'dns';
 import http from 'http';
 import https from 'https';
 import { Readable } from 'stream';
+import { SocksProxyAgent } from 'socks-proxy-agent';
 import config from '../config/config.js';
 
 // ==================== DNS & 代理统一配置 ====================
@@ -34,17 +35,36 @@ const httpsAgent = new https.Agent({
 });
 
 // 统一构建代理配置
-function buildProxyConfig() {
-  if (!config.proxy) return false;
+// 返回覆盖项：{ proxy: {...} } 用于 http/https 代理；{ proxy: false, httpAgent, httpsAgent } 用于 SOCKS 代理
+export function buildProxySetup(proxyUrl = config.proxy) {
+  if (!proxyUrl) return { proxy: false };
+  const normalized = String(proxyUrl).trim();
+  const isSocks = /^socks(4|4a|5|5h):\/\//i.test(normalized);
+
+  if (isSocks) {
+    // axios 原生不支持 SOCKS 代理，使用 SocksProxyAgent 建立隧道
+    try {
+      const agent = new SocksProxyAgent(normalized, {
+        keepAlive: true,
+        timeout: Number(config.timeout) || 30000
+      });
+      return { proxy: false, httpAgent: agent, httpsAgent: agent };
+    } catch {
+      return { proxy: false };
+    }
+  }
+
   try {
-    const proxyUrl = new URL(config.proxy);
+    const u = new URL(normalized);
     return {
-      protocol: proxyUrl.protocol.replace(':', ''),
-      host: proxyUrl.hostname,
-      port: parseInt(proxyUrl.port, 10)
+      proxy: {
+        protocol: u.protocol.replace(':', ''),
+        host: u.hostname,
+        port: parseInt(u.port, 10)
+      }
     };
   } catch {
-    return false;
+    return { proxy: false };
   }
 }
 
@@ -71,7 +91,8 @@ export function buildAxiosRequestConfig({
     timeout,
     httpAgent,
     httpsAgent,
-    proxy: buildProxyConfig(),
+    // 代理配置（SOCKS 代理会同时覆盖 httpAgent/httpsAgent）
+    ...buildProxySetup(),
     // 禁用自动设置 Content-Length，让 axios 使用 Transfer-Encoding: chunked
     maxContentLength: Infinity,
     maxBodyLength: Infinity
