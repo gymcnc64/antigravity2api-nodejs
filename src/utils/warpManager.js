@@ -15,9 +15,8 @@ class WarpManager {
    * @returns {Promise<boolean>}
    */
   async restartWarp(reason = '网络请求受阻') {
-    // 如果未显式开启 autoRestartWarp，则不执行系统重启命令
-    if (config?.autoRestartWarp !== true) {
-      log.debug(`[WARP] 未开启自动重启 WARP 开关，跳过执行系统命令 (${reason})`);
+    if (config?.autoRestartWarp === false) {
+      log.debug(`[WARP] 已手动关闭自动重启 WARP 开关，跳过执行系统命令 (${reason})`);
       return false;
     }
 

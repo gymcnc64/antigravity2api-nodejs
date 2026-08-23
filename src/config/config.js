@@ -450,8 +450,8 @@ export function buildConfig(jsonConfig, upstreamCfg = {}) {
     debugDumpRequestResponse: process.env.DEBUG_DUMP_REQUEST_RESPONSE === '1',
     // 总是使用积分：每次请求都使用 Google One AI 积分（默认关闭）
     alwaysUseCredits: jsonConfig.other?.alwaysUseCredits === true,
-    // 是否在网络异常时自动调用系统 warp restart 命令（默认关闭，避免触发透明代理死循环）
-    autoRestartWarp: jsonConfig.other?.autoRestartWarp === true || process.env.AUTO_RESTART_WARP === 'true',
+    // 是否在网络异常时自动调用系统 warp restart 命令（默认开启）
+    autoRestartWarp: jsonConfig.other?.autoRestartWarp !== false,
 
     // ==================== Gemini CLI 配置 ====================
     geminicli: {
