@@ -6,8 +6,8 @@ echo "========================================"
 echo
 
 # 1. 配置仓库与程序运行主路径
-REPO_URL="https://github.com/4kercc/antigravity2api-nodejs.git"
-BRANCH="antigravity2api"
+REPO_URL="https://github.com/gymcnc64/antigravity2api-nodejs.git"
+BRANCH="custom/http-port-8045"
 TARGET_DIR="antigravity2api-nodejs"
 APP_NAME="antigravity2api"
 
