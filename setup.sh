@@ -84,7 +84,7 @@ fi
 
 # 6. 配置管理员信息与凭据
 echo
-echo "[5/7] 配置管理员信息与凭据..."
+echo "[5/8] 配置管理员信息与凭据..."
 
 SERVER_PUBLIC_IP=$(curl -s --connect-timeout 3 https://api.ipify.org || curl -s --connect-timeout 3 https://ifconfig.me || curl -s --connect-timeout 3 https://ipinfo.io/ip || echo "")
 
@@ -122,9 +122,69 @@ else
     echo "JWT_SECRET=$RANDOM_JWT_SECRET" >> .env
 fi
 
-# 7. 检测并自动全局安装 PM2
+# 7. Cloudflare WARP 一键集成与自动配置（可选）
 echo
-echo "[6/7] 检查并安装 PM2 进程管理器..."
+echo "[6/8] 检查 Cloudflare WARP 代理与 Google 地区解锁..."
+INSTALL_WARP_CHOICE="n"
+if command -v warp-cli &> /dev/null; then
+    echo "✓ 检测到系统已安装 Cloudflare WARP 客户端"
+    # 确保设置纯净 SOCKS5 代理模式与端口 40000
+    warp-cli --accept-tos mode proxy 2>/dev/null || warp-cli mode proxy 2>/dev/null || true
+    warp-cli --accept-tos proxy port 40000 2>/dev/null || warp-cli proxy port 40000 2>/dev/null || true
+    warp-cli --accept-tos set-log-level warn 2>/dev/null || warp-cli set-log-level warn 2>/dev/null || true
+    warp-cli --accept-tos connect 2>/dev/null || warp-cli connect 2>/dev/null || true
+    
+    # 自动在 .env 中设置 PROXY
+    if ! grep -q "^PROXY=" .env 2>/dev/null || grep -q "^PROXY=$" .env 2>/dev/null; then
+        echo "✓ 自动配置 PROXY=socks5://127.0.0.1:40000 到 .env"
+        sed -i.bak 's|^#\? PROXY=.*|PROXY=socks5://127.0.0.1:40000|' .env 2>/dev/null || echo "PROXY=socks5://127.0.0.1:40000" >> .env
+        rm -f .env.bak
+    fi
+else
+    echo "💡 Cloudflare WARP 可用于解锁 Google 地区限制（提供纯净 SOCKS5 代理 127.0.0.1:40000，配备 200MB 内存防溢出保护）。"
+    read -p "是否需要自动安装并配置 Cloudflare WARP？(y/N, 默认 N): " INSTALL_WARP_CHOICE
+    if [[ "$INSTALL_WARP_CHOICE" =~ ^[Yy]$ ]]; then
+        echo "正在安装 Cloudflare WARP 客户端..."
+        if command -v apt-get &> /dev/null; then
+            curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg 2>/dev/null || true
+            echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs 2>/dev/null || echo 'bookworm') main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list > /dev/null
+            sudo apt-get update -y && sudo apt-get install -y cloudflare-warp
+        elif command -v yum &> /dev/null || command -v dnf &> /dev/null; then
+            sudo rpm -ivh http://pkg.cloudflareclient.com/cloudflare-release-el8.rpm 2>/dev/null || sudo rpm -ivh http://pkg.cloudflareclient.com/cloudflare-release-el9.rpm 2>/dev/null || true
+            sudo yum install -y cloudflare-warp 2>/dev/null || sudo dnf install -y cloudflare-warp
+        fi
+
+        # 配置 systemd 内存保护
+        if [ -d "/etc/systemd/system" ]; then
+            sudo mkdir -p /etc/systemd/system/warp-svc.service.d
+            cat << 'EOF_WARP_CONF' | sudo tee /etc/systemd/system/warp-svc.service.d/override.conf > /dev/null
+[Service]
+MemoryMax=200M
+MemoryHigh=150M
+Restart=always
+RestartSec=5s
+EOF_WARP_CONF
+            sudo systemctl daemon-reload 2>/dev/null || true
+            sudo systemctl enable --now warp-svc 2>/dev/null || true
+        fi
+
+        # 注册与连接
+        sleep 2
+        warp-cli --accept-tos registration new 2>/dev/null || warp-cli register 2>/dev/null || true
+        warp-cli --accept-tos mode proxy 2>/dev/null || warp-cli mode proxy 2>/dev/null || true
+        warp-cli --accept-tos proxy port 40000 2>/dev/null || warp-cli proxy port 40000 2>/dev/null || true
+        warp-cli --accept-tos set-log-level warn 2>/dev/null || warp-cli set-log-level warn 2>/dev/null || true
+        warp-cli --accept-tos connect 2>/dev/null || warp-cli connect 2>/dev/null || true
+
+        echo "✓ WARP 安装完成并配置为纯净 SOCKS5 代理 (127.0.0.1:40000)"
+        sed -i.bak 's|^#\? PROXY=.*|PROXY=socks5://127.0.0.1:40000|' .env 2>/dev/null || echo "PROXY=socks5://127.0.0.1:40000" >> .env
+        rm -f .env.bak
+    fi
+fi
+
+# 8. 检测并自动全局安装 PM2
+echo
+echo "[7/8] 检查并安装 PM2 进程管理器..."
 if ! command -v pm2 &> /dev/null; then
     echo "正在全局安装 PM2..."
     npm install -g pm2
@@ -136,9 +196,9 @@ else
     echo "✓ PM2 已安装"
 fi
 
-# 8. 加入 PM2 服务与开机自启动
+# 9. 加入 PM2 服务与开机自启动
 echo
-echo "[7/7] 启动 PM2 进程守护并配置自启动..."
+echo "[8/8] 启动 PM2 进程守护并配置自启动..."
 # 清理死进程，确保以固定的绝对路径启动
 pm2 delete "$APP_NAME" > /dev/null 2>&1 || true
 

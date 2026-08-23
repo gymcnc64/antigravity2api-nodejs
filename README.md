@@ -11,6 +11,7 @@
 | 特性 | 说明 |
 | :--- | :--- |
 | ⚡ **原生轻量 HTTP 监听** | 默认直接监听 **8045 端口**，去除 SSL 上下文开销，极速启动与响应 |
+| 🌐 **内置 WARP 解锁与自愈** | 原生集成 Cloudflare WARP SOCKS5 代理 (`127.0.0.1:40000`) 与 200MB 内存防溢出，支持异常自动换 IP 与地区自愈 |
 | 🔑 **2FA 双因素身份验证** | 支持使用 Google Authenticator 等动态口令 App 绑定 2FA，提供 10 个一次性备用恢复码防丢防护 |
 | 🎛️ **CLI 功能开关控制** | 可在设置中开启或关闭 Gemini CLI (`/cli/*`) API 反代功能，关闭后自动隐藏 CLI 页面标签 |
 | 🎯 **API 密钥 Token 消耗上限** | 支持为单个 API Key 设置最大 Token 消耗限制（如设置 1 亿 Token 阈值），用完后自动禁用防止超量使用 |
@@ -100,9 +101,12 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
 JWT_SECRET=your-jwt-secret-key-change-this-in-production
 
-# 可选配置
-# PROXY=http://127.0.0.1:7890
+# 可选配置（支持 HTTP / HTTPS / SOCKS5 代理，如内置 WARP）
+# PROXY=socks5://127.0.0.1:40000
 ```
+
+> **🌐 Cloudflare WARP 解锁与自愈提示**：
+> 本服务原生支持 SOCKS5 代理（推荐 `socks5://127.0.0.1:40000`）。在后台「系统设置」中，可一键应用 WARP 代理、查看出口 IP 与地理位置，并开启「异常自动换 IP」。当请求遭遇 Google 地区限制时，系统会自动将受限账号临时冷却隔离，并智能触发 WARP 重启更换公网出口。
 
 `config.json` 默认监听端口已设定为 `8045`：
 ```json

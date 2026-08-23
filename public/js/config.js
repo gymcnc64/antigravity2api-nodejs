@@ -168,6 +168,7 @@ async function loadConfig() {
                 if (form.elements['CACHE_THINKING']) form.elements['CACHE_THINKING'].checked = json.other.cacheThinking !== false;
                 if (form.elements['FAKE_NON_STREAM']) form.elements['FAKE_NON_STREAM'].checked = json.other.fakeNonStream !== false;
                 if (form.elements['ALWAYS_USE_CREDITS']) form.elements['ALWAYS_USE_CREDITS'].checked = json.other.alwaysUseCredits || false;
+                if (form.elements['autoRestartWarp']) form.elements['autoRestartWarp'].checked = json.other.autoRestartWarp !== false;
             }
 
             // 加载官方系统提示词
@@ -217,6 +218,10 @@ async function loadConfig() {
             // 加载 2FA 状态
             if (typeof load2FAStatus === 'function') {
                 load2FAStatus();
+            }
+            // 加载 WARP 状态
+            if (typeof loadWarpStatus === 'function') {
+                loadWarpStatus();
             }
         }
     } catch (error) {
@@ -329,6 +334,7 @@ async function saveConfig(e) {
     jsonConfig.other.fakeNonStream = form.elements['FAKE_NON_STREAM']?.checked ?? true;
     jsonConfig.other.alwaysUseCredits = form.elements['ALWAYS_USE_CREDITS']?.checked || false;
     jsonConfig.other.retryPollTokenWithQuota = form.elements['RETRY_POLL_TOKEN_WITH_QUOTA']?.checked || false;
+    jsonConfig.other.autoRestartWarp = form.elements['autoRestartWarp']?.checked !== false;
 
     Object.entries(allConfig).forEach(([key, value]) => {
         if (sensitiveKeys.includes(key)) {
@@ -356,7 +362,7 @@ async function saveConfig(e) {
                 const num = parseInt(value);
                 jsonConfig.other.retryIntervalMs = Number.isNaN(num) ? undefined : num;
             }
-            else if (key === 'SKIP_PROJECT_ID_FETCH' || key === 'USE_NATIVE_AXIOS' || key === 'USE_CONTEXT_SYSTEM_PROMPT' || key === 'MERGE_SYSTEM_PROMPT' || key === 'OFFICIAL_PROMPT_POSITION' || key === 'PASS_SIGNATURE_TO_CLIENT' || key === 'USE_FALLBACK_SIGNATURE' || key === 'CACHE_ALL_SIGNATURES' || key === 'CACHE_TOOL_SIGNATURES' || key === 'CACHE_IMAGE_SIGNATURES' || key === 'CACHE_THINKING' || key === 'FAKE_NON_STREAM' || key === 'ALWAYS_USE_CREDITS' || key === 'RETRY_POLL_TOKEN_WITH_QUOTA') {
+            else if (key === 'SKIP_PROJECT_ID_FETCH' || key === 'USE_NATIVE_AXIOS' || key === 'USE_CONTEXT_SYSTEM_PROMPT' || key === 'MERGE_SYSTEM_PROMPT' || key === 'OFFICIAL_PROMPT_POSITION' || key === 'PASS_SIGNATURE_TO_CLIENT' || key === 'USE_FALLBACK_SIGNATURE' || key === 'CACHE_ALL_SIGNATURES' || key === 'CACHE_TOOL_SIGNATURES' || key === 'CACHE_IMAGE_SIGNATURES' || key === 'CACHE_THINKING' || key === 'FAKE_NON_STREAM' || key === 'ALWAYS_USE_CREDITS' || key === 'RETRY_POLL_TOKEN_WITH_QUOTA' || key === 'autoRestartWarp') {
                 // 跳过，已在上面处理
             }
             else if (key === 'ROTATION_STRATEGY') jsonConfig.rotation.strategy = value || undefined;
@@ -481,6 +487,123 @@ async function testProxyConnectivity() {
             btn.disabled = false;
             btn.textContent = origText;
         }
+    }
+}
+
+// ==================== Cloudflare WARP 管理 ====================
+
+/**
+ * 查询 WARP 运行状态与出口 IP
+ */
+async function loadWarpStatus() {
+    const badge = document.getElementById('warpStatusBadge');
+    const ipInfoEl = document.getElementById('warpIpInfo');
+    if (!badge || !ipInfoEl) return;
+
+    badge.style.background = 'rgba(100,116,139,0.15)';
+    badge.style.color = '#64748b';
+    badge.textContent = '检测中...';
+    ipInfoEl.textContent = '查询出口 IP...';
+
+    try {
+        const response = await authFetch('/admin/warp/status');
+        const res = await response.json();
+        if (res.success && res.data) {
+            const { installed, connected, statusText, ipInfo } = res.data;
+            if (!installed) {
+                badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                badge.style.color = '#ef4444';
+                badge.textContent = '未安装';
+                ipInfoEl.textContent = '系统未检测到 warp-cli 客户端';
+            } else if (connected) {
+                badge.style.background = 'rgba(16, 185, 129, 0.15)';
+                badge.style.color = '#10b981';
+                badge.textContent = '🟢 已连接 (40000 端口)';
+                if (ipInfo && ipInfo.ip) {
+                    const countryFlag = ipInfo.loc ? `[${ipInfo.loc}] ` : '';
+                    ipInfoEl.textContent = `出口 IP: ${countryFlag}${ipInfo.ip}${ipInfo.colo ? ` (${ipInfo.colo})` : ''}`;
+                } else {
+                    ipInfoEl.textContent = '已连接 (无法探测公网出口)';
+                }
+            } else {
+                badge.style.background = 'rgba(245, 158, 11, 0.15)';
+                badge.style.color = '#f59e0b';
+                badge.textContent = `🟡 ${statusText || '未连接'}`;
+                ipInfoEl.textContent = 'SOCKS5 代理暂未就绪';
+            }
+        } else {
+            badge.style.background = 'rgba(239, 68, 68, 0.15)';
+            badge.style.color = '#ef4444';
+            badge.textContent = '查询失败';
+            ipInfoEl.textContent = res.message || '无法获取状态';
+        }
+    } catch (err) {
+        badge.style.background = 'rgba(239, 68, 68, 0.15)';
+        badge.style.color = '#ef4444';
+        badge.textContent = '异常';
+        ipInfoEl.textContent = err.message;
+    }
+}
+
+/**
+ * 手动触发 WARP 重启换 IP
+ */
+async function triggerRestartWarp() {
+    const btn = document.getElementById('restartWarpBtn');
+    const origText = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ 重启中...';
+    }
+
+    try {
+        const response = await authFetch('/admin/warp/restart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ force: true })
+        });
+        const res = await response.json();
+        if (res.success) {
+            showToast('WARP 重启指令已发送，正在重新获取出口 IP...', 'success');
+            // 稍等 2.5 秒后刷新状态
+            setTimeout(() => {
+                loadWarpStatus();
+            }, 2500);
+        } else {
+            showToast(res.message || '重启 WARP 失败', 'error');
+        }
+    } catch (err) {
+        showToast('重启请求异常: ' + err.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = origText;
+        }
+    }
+}
+
+/**
+ * 一键填入并应用 WARP SOCKS5 代理
+ */
+async function applyWarpProxy() {
+    const proxyInput = document.getElementById('proxyInput') || document.querySelector('input[name="PROXY"]');
+    if (proxyInput) {
+        proxyInput.value = 'socks5://127.0.0.1:40000';
+    }
+
+    try {
+        const response = await authFetch('/admin/warp/apply-proxy', {
+            method: 'POST'
+        });
+        const res = await response.json();
+        if (res.success) {
+            showToast(res.message || '已成功将系统代理设置为 socks5://127.0.0.1:40000', 'success');
+            loadWarpStatus();
+        } else {
+            showToast(res.message || '应用代理配置失败', 'error');
+        }
+    } catch (err) {
+        showToast('请求异常: ' + err.message, 'error');
     }
 }
 

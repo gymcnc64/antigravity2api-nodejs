@@ -597,6 +597,34 @@
                                                 <button type="button" class="btn btn-info btn-sm" id="testProxyBtn" onclick="testProxyConnectivity()" style="white-space: nowrap;">⚡ 测试连通性</button>
                                             </div>
                                         </div>
+
+                                        <!-- Cloudflare WARP 管理面板 -->
+                                        <div class="warp-card" style="background: var(--card); border: 1.5px solid var(--border); border-radius: 12px; padding: 1rem; margin-top: 0.85rem;">
+                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 8px;">
+                                                <div style="display: flex; align-items: center; gap: 8px;">
+                                                    <span style="font-size: 1.2rem;">🌐</span>
+                                                    <strong style="font-size: 0.95rem; color: var(--text);">Cloudflare WARP 解锁与自愈</strong>
+                                                    <span id="warpStatusBadge" style="font-size: 0.75rem; padding: 2px 8px; border-radius: 9999px; background: rgba(100,116,139,0.15); color: #64748b; font-weight: 600;">检测中...</span>
+                                                </div>
+                                                <div id="warpIpInfo" style="font-size: 0.8rem; color: var(--text-light); font-family: monospace;">-</div>
+                                            </div>
+
+                                            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 0.75rem;">
+                                                <button type="button" class="btn btn-secondary btn-sm" onclick="applyWarpProxy()" style="font-size: 0.8rem; padding: 0.35rem 0.65rem;">⚡ 一键填入 WARP 代理 (127.0.0.1:40000)</button>
+                                                <button type="button" class="btn btn-info btn-sm" id="restartWarpBtn" onclick="triggerRestartWarp()" style="font-size: 0.8rem; padding: 0.35rem 0.65rem;">🔄 重启 WARP / 换出口 IP</button>
+                                                <button type="button" class="btn btn-secondary btn-sm" onclick="loadWarpStatus()" style="font-size: 0.8rem; padding: 0.35rem 0.65rem;">🔍 刷新状态</button>
+                                            </div>
+
+                                            <div class="switch-row" style="margin: 0; padding-top: 0.5rem; border-top: 1px dashed var(--border);">
+                                                <div class="form-group compact switch-group" style="margin: 0;">
+                                                    <label style="font-size: 0.82rem; margin: 0;">🛡️ 异常自动换 IP <span class="help-tip" data-tooltip="当遭遇 Google 地区限制或网络阻断时，自动触发 WARP 重启换 IP 并隔离受限账号（带60秒防抖保护）">?</span></label>
+                                                    <label class="switch">
+                                                        <input type="checkbox" name="autoRestartWarp" id="autoRestartWarpCheckbox" checked>
+                                                        <span class="slider round"></span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <!-- 模型默认参数 -->

@@ -23,6 +23,7 @@ import { getEnvPath } from '../utils/paths.js';
 import ipBlockManager from '../utils/ipBlockManager.js';
 import apiKeyManager from '../auth/api_key_manager.js';
 import { get2FAConfig, save2FAConfig, generateSecret, generateTOTP, verifyTOTP, generateBackupCodes, consumeBackupCode } from '../utils/totpManager.js';
+import warpManager from '../utils/warpManager.js';
 import { server } from '../server/index.js';
 import dotenv from 'dotenv';
 
@@ -509,6 +510,49 @@ router.post('/test-proxy', cookieAuthMiddleware, async (req, res) => {
         proxy: proxyUrl
       }
     });
+  }
+});
+
+// ==================== WARP 管理路由 ====================
+
+// 获取 WARP 运行状态与出口 IP
+router.get('/warp/status', cookieAuthMiddleware, async (req, res) => {
+  try {
+    const status = await warpManager.getStatus();
+    res.json({ success: true, data: status });
+  } catch (error) {
+    res.status(500).json({ success: false, message: `获取 WARP 状态失败: ${error.message}` });
+  }
+});
+
+// 手动重启 WARP（换出口 IP）
+router.post('/warp/restart', cookieAuthMiddleware, async (req, res) => {
+  try {
+    const { force = true } = req.body || {};
+    const result = await warpManager.restartWarp('管理员手动触发重启', force);
+    if (result.success) {
+      res.json({ success: true, message: result.message });
+    } else {
+      res.status(500).json({ success: false, message: result.message });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, message: `重启异常: ${error.message}` });
+  }
+});
+
+// 一键将当前系统代理配置应用为 WARP SOCKS5
+router.post('/warp/apply-proxy', cookieAuthMiddleware, async (req, res) => {
+  try {
+    const warpProxyUrl = 'socks5://127.0.0.1:40000';
+    // 更新 .env
+    updateEnvFile(envPath, { PROXY: warpProxyUrl });
+    process.env.PROXY = warpProxyUrl;
+    // 热重载配置
+    reloadConfig();
+    logger.info(`已一键将系统代理配置应用为 WARP: ${warpProxyUrl}`);
+    res.json({ success: true, message: `已成功将系统代理设置为 ${warpProxyUrl} 并热重载生效！` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: `应用代理配置失败: ${error.message}` });
   }
 });
 
