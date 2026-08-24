@@ -46,7 +46,10 @@ export function buildProxySetup(proxyUrl = config.proxy) {
     try {
       const agent = new SocksProxyAgent(normalized, {
         keepAlive: true,
-        timeout: Number(config.timeout) || 30000
+        timeout: Number(config.timeout) || 30000,
+        // 强制优先 IPv4 解析：WARP 的 IPv6 出口段被 Google 间歇性判定为
+        // 不支持地区（400），IPv4 出口（104.28.x.x / 162.159.x.x）判定稳定
+        lookup: customLookup
       });
       return { proxy: false, httpAgent: agent, httpsAgent: agent };
     } catch {
