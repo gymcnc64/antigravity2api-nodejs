@@ -11,6 +11,7 @@ import { generateToken, authMiddleware, verifyToken } from '../auth/jwt.js';
 import tokenManager from '../auth/token_manager.js';
 import geminicliTokenManager from '../auth/geminicli_token_manager.js';
 import quotaManager from '../auth/quota_manager.js';
+import tokenCooldownManager from '../auth/token_cooldown_manager.js';
 import oauthManager from '../auth/oauth_manager.js';
 import config, { getConfigJson, saveConfigJson } from '../config/config.js';
 import logger from '../utils/logger.js';
@@ -423,6 +424,35 @@ router.post('/tokens/:tokenId/refresh', cookieAuthMiddleware, async (req, res) =
     logger.error('刷新Token失败:', error.message);
     const status = error.statusCode || 500;
     res.status(status).json({ success: false, message: error.message });
+  }
+});
+
+// 清除指定 Token 的冷却状态（恢复轮询资格）
+router.post('/tokens/:tokenId/clear-cooldown', cookieAuthMiddleware, async (req, res) => {
+  const { tokenId } = req.params;
+  try {
+    tokenCooldownManager.clearAllCooldowns(tokenId);
+    logger.info(`已手动清除 Token ${tokenId} 的冷却隔离状态`);
+    res.json({ success: true, message: '已解除该 Token 的冷却隔离，已恢复参与轮询' });
+  } catch (error) {
+    logger.error('清除冷却状态失败:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 清除所有 Token 的冷却状态
+router.post('/tokens/clear-all-cooldowns', cookieAuthMiddleware, async (req, res) => {
+  try {
+    const allCooldowns = tokenCooldownManager.getAllCooldowns() || {};
+    const count = Object.keys(allCooldowns).length;
+    for (const tokenId of Object.keys(allCooldowns)) {
+      tokenCooldownManager.clearAllCooldowns(tokenId);
+    }
+    logger.info(`已手动清除全部 ${count} 个 Token 的冷却状态`);
+    res.json({ success: true, message: `已成功解除全部 ${count} 个 Token 的冷却状态` });
+  } catch (error) {
+    logger.error('一键清除全部冷却状态失败:', error.message);
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

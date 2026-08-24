@@ -919,7 +919,12 @@ function updateFilterButtonState(filter) {
     document.querySelectorAll('.stat-item').forEach(item => {
         item.classList.remove('active');
     });
-    const filterMap = { 'all': 'totalTokens', 'enabled': 'enabledTokens', 'disabled': 'disabledTokens' };
+    const filterMap = {
+        'all': 'totalTokens',
+        'enabled': 'enabledTokens',
+        'cooldown': 'cooldownTokens',
+        'disabled': 'disabledTokens'
+    };
     const activeElement = document.getElementById(filterMap[filter]);
     if (activeElement) {
         activeElement.closest('.stat-item').classList.add('active');
@@ -963,10 +968,83 @@ function cleanupRefreshingTokens() {
     }
 }
 
+// 格式化冷却剩余时间为可读字符串
+function formatCooldownRemaining(untilTimestamp) {
+    if (!untilTimestamp) return '';
+    const now = Date.now();
+    const diffMs = untilTimestamp - now;
+    if (diffMs <= 0) return '已结束';
+    const totalSec = Math.floor(diffMs / 1000);
+    const hours = Math.floor(totalSec / 3600);
+    const mins = Math.floor((totalSec % 3600) / 60);
+    const secs = totalSec % 60;
+    if (hours > 0) return `${hours}小时${mins}分`;
+    if (mins > 0) return `${mins}分${secs}秒`;
+    return `${secs}秒`;
+}
+
+// 解除单个 Token 的冷却状态
+async function clearTokenCooldown(tokenId) {
+    showLoading('正在解除冷却隔离...');
+    try {
+        const response = await authFetch(`/admin/tokens/${encodeURIComponent(tokenId)}/clear-cooldown`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+        hideLoading();
+        if (data.success) {
+            showToast(data.message || '已成功解除冷却', 'success');
+            loadTokens();
+        } else {
+            showToast(data.message || '解除冷却失败', 'error');
+        }
+    } catch (error) {
+        hideLoading();
+        showToast('解除冷却失败: ' + error.message, 'error');
+    }
+}
+
+// 解除全部 Token 的冷却状态
+async function clearAllCooldowns() {
+    if (!confirm('确定要解除所有处于冷却隔离状态的 Token 吗？\n解除后所有 Token 将立即重新参与轮询。')) {
+        return;
+    }
+    showLoading('正在解除全部冷却状态...');
+    try {
+        const response = await authFetch('/admin/tokens/clear-all-cooldowns', {
+            method: 'POST'
+        });
+        const data = await response.json();
+        hideLoading();
+        if (data.success) {
+            showToast(data.message || '已解除全部冷却状态', 'success');
+            loadTokens();
+        } else {
+            showToast(data.message || '解除失败', 'error');
+        }
+    } catch (error) {
+        hideLoading();
+        showToast('解除失败: ' + error.message, 'error');
+    }
+}
+
 function renderTokens(tokens) {
     // 只在首次加载时更新缓存
     if (tokens !== cachedTokens) {
         cachedTokens = tokens;
+    }
+
+    const now = Date.now();
+    // 判定单个 token 是否处于活跃冷却中
+    const isTokenInCooldown = (t) => {
+        if (!t.cooldowns || typeof t.cooldowns !== 'object') return false;
+        return Object.values(t.cooldowns).some(c => c && c.until && c.until > now);
+    };
+
+    const cooldownTokensCount = tokens.filter(t => isTokenInCooldown(t)).length;
+    const cooldownEl = document.getElementById('cooldownTokens');
+    if (cooldownEl) {
+        cooldownEl.textContent = cooldownTokensCount;
     }
 
     document.getElementById('totalTokens').textContent = tokens.length;
@@ -977,6 +1055,8 @@ function renderTokens(tokens) {
     let filteredTokens = tokens;
     if (currentFilter === 'enabled') {
         filteredTokens = tokens.filter(t => t.enable);
+    } else if (currentFilter === 'cooldown') {
+        filteredTokens = tokens.filter(t => isTokenInCooldown(t));
     } else if (currentFilter === 'disabled') {
         filteredTokens = tokens.filter(t => !t.enable);
     }
@@ -984,7 +1064,8 @@ function renderTokens(tokens) {
     const tokenList = document.getElementById('tokenList');
     if (filteredTokens.length === 0) {
         const emptyText = currentFilter === 'all' ? '暂无Token' :
-            currentFilter === 'enabled' ? '暂无启用的Token' : '暂无禁用的Token';
+            currentFilter === 'enabled' ? '暂无启用的Token' :
+            currentFilter === 'cooldown' ? '暂无冷却隔离的Token' : '暂无禁用的Token';
         const emptyHint = currentFilter === 'all' ? '点击上方OAuth按钮添加Token' : '点击上方"总数"查看全部';
         tokenList.innerHTML = `
             <div class="empty-state">
@@ -1006,6 +1087,22 @@ function renderTokens(tokens) {
         const originalIndex = cachedTokens.findIndex(t => t.id === token.id);
         const tokenNumber = originalIndex + 1;
 
+        // 检查冷却状态
+        let activeCooldownInfo = null;
+        let cooldownGroupNames = [];
+        let maxCooldownUntil = 0;
+        if (token.cooldowns && typeof token.cooldowns === 'object') {
+            for (const [group, data] of Object.entries(token.cooldowns)) {
+                if (data && data.until && data.until > now) {
+                    cooldownGroupNames.push(group);
+                    if (data.until > maxCooldownUntil) {
+                        maxCooldownUntil = data.until;
+                    }
+                }
+            }
+        }
+        const hasActiveCooldown = cooldownGroupNames.length > 0;
+
         // 转义所有用户数据防止 XSS
         const safeTokenId = escapeJs(tokenId);
         const safeProjectId = escapeHtml(token.projectId || '');
@@ -1014,20 +1111,29 @@ function renderTokens(tokens) {
         const safeEmailJs = escapeJs(token.email || '');
 
         return `
-        <div class="token-card ${!token.enable ? 'disabled' : ''} ${isRefreshing ? 'refreshing' : ''} ${skipAnimation ? 'no-animation' : ''}" id="card-${escapeHtml(cardId)}">
+        <div class="token-card ${!token.enable ? 'disabled' : ''} ${hasActiveCooldown ? 'in-cooldown' : ''} ${isRefreshing ? 'refreshing' : ''} ${skipAnimation ? 'no-animation' : ''}" id="card-${escapeHtml(cardId)}">
             <div class="token-header">
                 <div class="token-header-left">
-	                    <span class="status ${token.enable ? 'enabled' : 'disabled'}">
-	                        ${token.enable ? '✅ 启用' : '❌ 禁用'}
-	                    </span>
-	                    ${token.sub ? `<span class="status-subscription subscription-badge ${token.sub === 'free-tier' ? 'free-tier' : 'paid-tier'}" title="${escapeHtml(token.sub)}">${escapeHtml(formatSubTier(token.sub))}</span>` : ''}
-	                    <button class="btn-icon token-refresh-btn ${isRefreshing ? 'loading' : ''}" id="refresh-btn-${escapeHtml(cardId)}" onclick="manualRefreshToken('${safeTokenId}')" title="刷新Token" ${isRefreshing ? 'disabled' : ''}>🔄</button>
+                    <span class="status ${!token.enable ? 'disabled' : (hasActiveCooldown ? 'cooldown' : 'enabled')}">
+                        ${!token.enable ? '❌ 禁用' : (hasActiveCooldown ? '🟡 冷却中' : '✅ 轮询中')}
+                    </span>
+                    ${hasActiveCooldown ? `<span class="status-cooldown-badge" title="因400地区受限或配额耗尽被系统自动冷却隔离">🧊 ${cooldownGroupNames.join('/')}隔离</span>` : ''}
+                    ${token.sub ? `<span class="status-subscription subscription-badge ${token.sub === 'free-tier' ? 'free-tier' : 'paid-tier'}" title="${escapeHtml(token.sub)}">${escapeHtml(formatSubTier(token.sub))}</span>` : ''}
+                    <button class="btn-icon token-refresh-btn ${isRefreshing ? 'loading' : ''}" id="refresh-btn-${escapeHtml(cardId)}" onclick="manualRefreshToken('${safeTokenId}')" title="刷新Token" ${isRefreshing ? 'disabled' : ''}>🔄</button>
                 </div>
                 <div class="token-header-right">
                     <button class="btn-icon" onclick="showTokenDetail('${safeTokenId}')" title="编辑">✏️</button>
                     <span class="token-id">#${tokenNumber}</span>
                 </div>
             </div>
+
+            ${hasActiveCooldown ? `
+            <div class="token-cooldown-banner">
+                <span>🧊 隔离剩余: <strong>${formatCooldownRemaining(maxCooldownUntil)}</strong></span>
+                <button class="btn-uncooldown" onclick="clearTokenCooldown('${safeTokenId}')" title="解除该Token冷却并立即恢复参与轮询">⚡ 解除冷却</button>
+            </div>
+            ` : ''}
+
             <div class="token-info">
                 <div class="info-row editable sensitive-row" onclick="editField(event, '${safeTokenId}', 'projectId', '${safeProjectIdJs}')" title="点击编辑">
                     <span class="info-label">📦</span>
@@ -1045,14 +1151,17 @@ function renderTokens(tokens) {
                 <span class="token-id-label">🔑</span>
                 <span class="token-id-value">${escapeHtml(tokenId.length > 24 ? tokenId.substring(0, 12) + '...' + tokenId.substring(tokenId.length - 8) : tokenId)}</span>
             </div>
-	            <div class="token-quota-inline" id="quota-inline-${escapeHtml(cardId)}">
-	                <div class="quota-inline-header" onclick="toggleQuotaExpand('${escapeJs(cardId)}', '${safeTokenId}')">
-	                    <span class="quota-inline-summary" id="quota-summary-${escapeHtml(cardId)}">📊 加载中...</span>
-	                </div>
-	                <div class="quota-inline-detail hidden" id="quota-detail-${escapeHtml(cardId)}"></div>
-	            </div>
+            <div class="token-quota-inline" id="quota-inline-${escapeHtml(cardId)}">
+                <div class="quota-inline-header" onclick="toggleQuotaExpand('${escapeJs(cardId)}', '${safeTokenId}')">
+                    <span class="quota-inline-summary" id="quota-summary-${escapeHtml(cardId)}">📊 加载中...</span>
+                </div>
+                <div class="quota-inline-detail hidden" id="quota-detail-${escapeHtml(cardId)}"></div>
+            </div>
             <div class="token-actions">
                 <button class="btn btn-info btn-xs" onclick="showQuotaModal('${safeTokenId}')" title="查看额度">📊 详情</button>
+                ${hasActiveCooldown ? `
+                <button class="btn btn-warning btn-xs" onclick="clearTokenCooldown('${safeTokenId}')" title="立即解除冷却隔离">⚡ 解除冷却</button>
+                ` : ''}
                 <button class="btn ${token.enable ? 'btn-warning' : 'btn-success'} btn-xs" onclick="toggleToken('${safeTokenId}', ${!token.enable})" title="${token.enable ? '禁用' : '启用'}">
                     ${token.enable ? '⏸️ 禁用' : '▶️ 启用'}
                 </button>

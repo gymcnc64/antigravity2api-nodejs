@@ -294,6 +294,10 @@
                                 <span class="stat-num" id="enabledTokens">0</span>
                                 <span class="stat-text">启用</span>
                             </div>
+                            <div class="stat-item warning clickable" style="--warning: #f59e0b;" onclick="filterTokens('cooldown')">
+                                <span class="stat-num" id="cooldownTokens" style="color: #f59e0b;">0</span>
+                                <span class="stat-text">冷却隔离</span>
+                            </div>
                             <div class="stat-item danger clickable" onclick="filterTokens('disabled')">
                                 <span class="stat-num" id="disabledTokens">0</span>
                                 <span class="stat-text">禁用</span>
@@ -308,6 +312,8 @@
                                 id="toggleSensitiveBtn" title="点击显示敏感信息">🙈 隐藏</button>
                             <button type="button" onclick="refreshAllQuotas()" class="btn btn-info btn-sm"
                                 id="refreshQuotasBtn">📊 刷新额度</button>
+                            <button type="button" onclick="clearAllCooldowns()" class="btn btn-warning btn-sm"
+                                title="一键清除全部 Token 的冷却隔离状态">⚡ 解除冷却</button>
                             <button type="button" onclick="batchFetchProjectIds()" class="btn btn-info btn-sm"
                                 title="批量获取所有启用Token的Project ID">🔍 批量获取</button>
                             <button type="button" onclick="loadTokens()" class="btn btn-warning btn-sm">🔄 重载</button>

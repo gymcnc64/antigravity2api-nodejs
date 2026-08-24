@@ -567,16 +567,18 @@ class TokenManager {
   }
 
   /**
-   * 获取所有 token 列表（不含敏感信息）
+   * 获取所有 token 列表（不含敏感信息，附带冷却状态）
    * @returns {Promise<Array>} Token 列表
    */
   async getTokenList() {
     try {
       await this._ensureInitialized();
       const salt = await this.store.getSalt();
+      const allCooldowns = tokenCooldownManager.getAllCooldowns() || {};
 
       return this.pool.getAllIds().map(tokenId => {
         const token = this.pool.get(tokenId);
+        const cooldownInfo = allCooldowns[tokenId] || null;
         return {
           id: tokenId,
           expires_in: token.expires_in,
@@ -586,7 +588,8 @@ class TokenManager {
           email: token.email || null,
           hasQuota: token.hasQuota !== false,
           sub: token.sub || null,
-          credits: token.credits !== null && token.credits !== undefined ? token.credits : null
+          credits: token.credits !== null && token.credits !== undefined ? token.credits : null,
+          cooldowns: cooldownInfo
         };
       });
     } catch (error) {
