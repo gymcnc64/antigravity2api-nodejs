@@ -353,6 +353,11 @@ class WarpManager {
       log.info('[WARP-Health] 已关闭出口健康自动探测 (autoProbeWarp=false)');
       return;
     }
+    // 未配置代理（直连模式）时无需探测 WARP 出口
+    if (!config.proxy) {
+      log.info('[WARP-Health] 未配置代理（直连模式），跳过出口健康自动探测');
+      return;
+    }
 
     const intervalMs = Number(config.warpProbeIntervalMs) > 0
       ? config.warpProbeIntervalMs

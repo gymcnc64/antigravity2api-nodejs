@@ -630,10 +630,12 @@ class TokenManager {
         tokenCooldownManager.clearAllCooldowns(tokenId);
       }
 
-      // 异步触发 WARP 换出口（restartWarp 自带 60s 冷却与并发锁）
+      // 异步触发 WARP 换出口（restartWarp 自带 60s 冷却与并发锁；直连模式无代理时跳过）
       try {
-        const { default: warpManager } = await import('../utils/warpManager.js');
-        warpManager.restartWarp('全部账号被隔离，自动换出口').catch(() => { });
+        if (config.proxy) {
+          const { default: warpManager } = await import('../utils/warpManager.js');
+          warpManager.restartWarp('全部账号被隔离，自动换出口').catch(() => { });
+        }
       } catch { }
     } catch (error) {
       log.warn('[SelfHeal] 紧急自愈失败:', error.message);

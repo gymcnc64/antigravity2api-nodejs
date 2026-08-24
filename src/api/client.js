@@ -271,14 +271,15 @@ async function handleApiError(error, token, dumpId = null, modelName = null) {
   }
 
   // 地区限制：Google 判定该账号/位置不受支持（400 FAILED_PRECONDITION）
-  // 隔离该 token 一段时间，避免轮询继续命中它导致请求时好时坏
+  // 注意：不再隔离账号。根因是出口 IP 被 Google 间歇性判定为不支持地区（与账号无关），
+  // 隔离账号会在出口坏窗口内把全部账号锁死导致服务不可用（死锁）。
+  // 正确做法：仅触发换出口（若配置了代理），并让上层重试切换账号。
   if (status === 400 && isGeoLocationRestrictedError(error)) {
-    await quarantineGeoBlockedToken(token, modelName);
-    // 根因多为 WARP 出口被 Google 间歇性判定为不支持地区：
-    // 60 秒内连续 3 次 geo-400 时强制重启换出口（突破冷却），否则走常规带冷却重启
     try {
-      const { default: warpManager } = await import('../utils/warpManager.js');
-      warpManager.notifyGeoBlocked().catch(() => { });
+      if (config.proxy) {
+        const { default: warpManager } = await import('../utils/warpManager.js');
+        warpManager.notifyGeoBlocked().catch(() => { });
+      }
     } catch { /* 换出口失败不影响主流程 */ }
     throw createApiError(`该账号所在地区不受支持，已自动隔离并切换其他账号。错误详情: ${errorBody}`, status, errorBody);
   }
