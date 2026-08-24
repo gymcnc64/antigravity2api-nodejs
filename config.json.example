@@ -36,7 +36,7 @@
     "retryPollTokenWithQuota": false,
     "forceIPv4": true,
     "autoProbeWarp": true,
-    "warpProbeIntervalMs": 180000,
+    "warpProbeIntervalMs": 60000,
     "skipProjectIdFetch": false,
     "useNativeAxios": false,
     "useContextSystemPrompt": false,

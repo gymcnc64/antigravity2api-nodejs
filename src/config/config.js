@@ -456,7 +456,7 @@ export function buildConfig(jsonConfig, upstreamCfg = {}) {
     // 出口健康自动探测：定时用当前代理发起轻量探测，若被 Google 判定地区受限
     // 则自动重启 WARP 换出口，规避不稳定出口段（默认开启）
     autoProbeWarp: jsonConfig.other?.autoProbeWarp !== false,
-    // 出口健康探测间隔（毫秒，默认 3 分钟）
+    // 出口健康探测间隔（毫秒，默认 1 分钟）
     warpProbeIntervalMs: Number.isFinite(jsonConfig.other?.warpProbeIntervalMs)
       ? jsonConfig.other.warpProbeIntervalMs
       : DEFAULT_WARP_PROBE_INTERVAL_MS,

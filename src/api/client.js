@@ -274,6 +274,12 @@ async function handleApiError(error, token, dumpId = null, modelName = null) {
   // 隔离该 token 一段时间，避免轮询继续命中它导致请求时好时坏
   if (status === 400 && isGeoLocationRestrictedError(error)) {
     await quarantineGeoBlockedToken(token, modelName);
+    // 根因多为 WARP 出口被 Google 间歇性判定为不支持地区：异步触发换出口
+    // （restartWarp 自带 60s 冷却与并发锁，不会频繁重启）
+    try {
+      const { default: warpManager } = await import('../utils/warpManager.js');
+      warpManager.restartWarp('检测到 400 地区限制，自动更换出口').catch(() => {});
+    } catch { /* 换出口失败不影响主流程 */ }
     throw createApiError(`该账号所在地区不受支持，已自动隔离并切换其他账号。错误详情: ${errorBody}`, status, errorBody);
   }
 

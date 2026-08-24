@@ -331,7 +331,7 @@ class WarpManager {
 
     const intervalMs = Number(config.warpProbeIntervalMs) > 0
       ? config.warpProbeIntervalMs
-      : 3 * 60 * 1000;
+      : 60 * 1000;
 
     const runProbe = async () => {
       if (this._probing || this.isRestarting) return;
