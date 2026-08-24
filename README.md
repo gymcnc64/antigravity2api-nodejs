@@ -52,6 +52,19 @@ curl -O https://raw.githubusercontent.com/gymcnc64/antigravity2api-nodejs/custom
 wget https://raw.githubusercontent.com/gymcnc64/antigravity2api-nodejs/custom/http-port-8045/setup.sh && chmod +x setup.sh && ./setup.sh
 ```
 
+#### 🔄 生产环境一键平滑升级与调优脚本
+
+如已部署运行，只需一行命令即可自动同步最新代码、切换 WireGuard 高稳定隧道、清理旧定时器并平滑重启 PM2：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gymcnc64/antigravity2api-nodejs/custom/http-port-8045/upgrade.sh | bash
+```
+
+或者在已克隆的目录内执行：
+```bash
+chmod +x upgrade.sh && ./upgrade.sh
+```
+
 #### Windows
 
 **CMD**:

@@ -288,14 +288,21 @@ export async function with429Retry(fn, maxRetries, options = {}, legacyOnAttempt
       return await fn(attempt, shouldUseCredits);
     } catch (error) {
       const status = getStatus(error);
-      // 地区限制（400 FAILED_PRECONDITION）与 429/503 一样可重试：换一个 token 再试
+      // 地区限制（400 FAILED_PRECONDITION）与网络抖动（代理重连、EOF、ECONNRESET、ECONNREFUSED）可自动重试
       const geoRestricted = isGeoLocationRestrictedError(error);
-      if (status !== 429 && status !== 503 && !geoRestricted) {
+      const isNetworkRetryable =
+        error.code === 'ECONNREFUSED' ||
+        error.code === 'ECONNRESET' ||
+        error.code === 'ETIMEDOUT' ||
+        error.code === 'EAI_AGAIN' ||
+        /unexpected EOF|connection reset|connection refused|socket hang up/i.test(error.message || '');
+
+      if (status !== 429 && status !== 503 && !geoRestricted && !isNetworkRetryable) {
         throw error;
       }
 
       const hint = getRetryHint(error);
-      const errorType = geoRestricted ? '400 地区限制' : (status === 503 ? '503' : '429');
+      const errorType = geoRestricted ? '400 地区限制' : (isNetworkRetryable ? `网络代理抖动 (${error.code || error.message?.slice(0, 30)})` : (status === 503 ? '503' : '429'));
       const modelId = retryOptions.modelId || null;
       const previousTokenId = getCurrentTokenId(retryOptions);
 

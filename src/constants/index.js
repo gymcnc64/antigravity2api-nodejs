@@ -78,10 +78,11 @@ export const DEFAULT_RETRY_TIMES = 3;
 
 /**
  * 默认固定重试间隔（毫秒）
- * 503 直接按固定间隔重试；429 只有在上游响应体提供等待间隔/恢复时间时才会重试。
+ * 503 / 代理抖动直接按固定间隔重试；429 只有在上游响应体提供等待间隔/恢复时间时才会重试。
+ * 调优为 2000ms（2秒），恰好覆盖 WARP 边缘重新协商抖动窗口。
  * @type {number}
  */
-export const DEFAULT_RETRY_INTERVAL_MS = 10000;
+export const DEFAULT_RETRY_INTERVAL_MS = 2000;
 
 /**
  * 默认最大请求体大小

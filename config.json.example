@@ -30,8 +30,9 @@
   },
   "other": {
     "timeout": 300000,
-    "retryTimes": 10,
-    "retryIntervalMs": 10000,
+    "retryTimes": 3,
+    "retryIntervalMs": 2000,
+    "autoRestartWarp": true,
     "retryPollTokenWithQuota": false,
     "forceIPv4": false,
     "skipProjectIdFetch": false,

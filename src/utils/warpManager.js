@@ -227,6 +227,38 @@ class WarpManager {
       return { success: false, message: err.message };
     }
   }
+
+  /**
+   * 优化 WARP 隧道协议（切换为抗丢包抖动性最强的 wireguard 协议）
+   * @returns {Promise<{ success: boolean, message: string }>}
+   */
+  async optimizeProtocol() {
+    try {
+      const res = await this._execCmd(
+        'warp-cli --accept-tos tunnel protocol set wireguard 2>/dev/null || ' +
+        'warp-cli tunnel protocol set wireguard 2>/dev/null || ' +
+        'warp-cli set-protocol wireguard 2>/dev/null'
+      );
+      if (res.success) {
+        log.info('[WARP] 已成功将底层隧道协议设置为 WireGuard 模式');
+        return { success: true, message: '已切换为 WireGuard 协议模式' };
+      }
+      return { success: false, message: res.stderr || '设置 WireGuard 协议失败' };
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  /**
+   * 清理历史遗留的定时器干扰（如 warp-google-update.timer）
+   */
+  async cleanupLegacyServices() {
+    try {
+      await this._execCmd('systemctl stop warp-google-update.timer warp-google-update.service 2>/dev/null || true');
+      await this._execCmd('systemctl disable warp-google-update.timer warp-google-update.service 2>/dev/null || true');
+      log.debug('[WARP] 已完成历史遗留定时服务检查与清理');
+    } catch { }
+  }
 }
 
 const warpManager = new WarpManager();

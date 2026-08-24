@@ -128,9 +128,14 @@ echo "[6/8] 检查 Cloudflare WARP 代理与 Google 地区解锁..."
 INSTALL_WARP_CHOICE="n"
 if command -v warp-cli &> /dev/null; then
     echo "✓ 检测到系统已安装 Cloudflare WARP 客户端"
-    # 确保设置纯净 SOCKS5 代理模式与端口 40000
+    # 清理历史遗留的干扰定时器
+    sudo systemctl stop warp-google-update.timer warp-google-update.service 2>/dev/null || true
+    sudo systemctl disable warp-google-update.timer warp-google-update.service 2>/dev/null || true
+
+    # 确保设置纯净 SOCKS5 代理模式与端口 40000，并切换抗抖动能力最强的 wireguard 协议
     warp-cli --accept-tos mode proxy 2>/dev/null || warp-cli mode proxy 2>/dev/null || true
     warp-cli --accept-tos proxy port 40000 2>/dev/null || warp-cli proxy port 40000 2>/dev/null || true
+    warp-cli --accept-tos tunnel protocol set wireguard 2>/dev/null || warp-cli tunnel protocol set wireguard 2>/dev/null || warp-cli set-protocol wireguard 2>/dev/null || true
     warp-cli --accept-tos set-log-level warn 2>/dev/null || warp-cli set-log-level warn 2>/dev/null || true
     warp-cli --accept-tos connect 2>/dev/null || warp-cli connect 2>/dev/null || true
     
