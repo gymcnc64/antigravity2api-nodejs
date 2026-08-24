@@ -19,6 +19,31 @@ class WarpManager {
     this._probeTimer = null;
     this._probing = false;
     this.lastProbeResult = null;
+    // 地区受限连续计数（坏窗口检测）
+    this._geoFailCount = 0;
+    this._lastGeoFailAt = 0;
+  }
+
+  /**
+   * 上报一次 geo-400 地区受限事件。
+   * 60 秒内连续 3 次地区受限判定为"出口坏窗口"，突破冷却强制重启换出口。
+   * @returns {Promise<{ success: boolean, message: string }>}
+   */
+  async notifyGeoBlocked() {
+    const now = Date.now();
+    if (now - this._lastGeoFailAt > 60 * 1000) {
+      this._geoFailCount = 0;
+    }
+    this._geoFailCount++;
+    this._lastGeoFailAt = now;
+
+    if (this._geoFailCount >= 3) {
+      this._geoFailCount = 0;
+      log.warn('[WARP] 60 秒内连续 3 次地区受限，判定为出口坏窗口，强制重启换出口');
+      return this.restartWarp('连续地区受限（坏窗口），强制换出口', true);
+    }
+    // 未达阈值：走常规带冷却的重启（避免频繁重启）
+    return this.restartWarp('检测到 400 地区限制，自动更换出口');
   }
 
   /**
