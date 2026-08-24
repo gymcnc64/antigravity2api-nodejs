@@ -42,7 +42,7 @@ function logMessage(level, ...args) {
   logWsServer.storeLog(level, message);
 }
 
-function logRequest(method, path, status, duration, ip = '', tokenUsage = null) {
+function logRequest(method, path, status, duration, ip = '', tokenUsage = null, account = '', model = '') {
   const statusColor = status >= 500 ? colors.red : status >= 400 ? colors.yellow : colors.green;
   let ipStr = ip ? `[${ip}] ` : '';
   let usageStr = '';
@@ -52,11 +52,13 @@ function logRequest(method, path, status, duration, ip = '', tokenUsage = null) 
     const total = tokenUsage.total_tokens || tokenUsage.totalTokenCount || (input + output);
     usageStr = ` | Tokens: In ${input} / Out ${output} / Total ${total}`;
   }
+  const accountStr = account ? ` | 账号: ${account}` : '';
+  const modelStr = model ? ` | 模型: ${model}` : '';
 
-  const message = `${ipStr}[${method}] - ${path} ${status} ${duration}ms${usageStr}`;
+  const message = `${ipStr}[${method}] - ${path} ${status} ${duration}ms${accountStr}${modelStr}${usageStr}`;
 
   // 输出到控制台
-  console.log(`${colors.gray}${timestampStr()}${colors.reset} ${colors.cyan}[${method}]${colors.reset} ${ipStr}- ${path} ${statusColor}${status}${colors.reset} ${colors.gray}${duration}ms${colors.reset}${usageStr}`);
+  console.log(`${colors.gray}${timestampStr()}${colors.reset} ${colors.cyan}[${method}]${colors.reset} ${ipStr}- ${path} ${statusColor}${status}${colors.reset} ${colors.gray}${duration}ms${colors.reset}${accountStr}${modelStr}${usageStr}`);
 
   // 存储日志（根据状态码决定级别）
   const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'request';

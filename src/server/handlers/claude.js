@@ -76,6 +76,8 @@ export const handleClaudeRequest = async (req, res, isStream) => {
 
       token = nextToken;
       tokenId = await tokenManager.getTokenId(token);
+      // 记录当前使用的账号到请求日志（重试切换账号时同步更新）
+      res.locals.tokenEmail = token.email || token.sub || tokenId.substring(0, 8);
       requestBody = generateClaudeRequestBody(messages, model, parameters, tools, system, token);
       if (isImageModel) {
         prepareImageRequest(requestBody);

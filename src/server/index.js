@@ -88,7 +88,7 @@ app.use((req, res, next) => {
     const start = Date.now();
     res.on('finish', () => {
       const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket.remoteAddress;
-      logger.request(req.method, fullPath, res.statusCode, Date.now() - start, clientIp, res.locals.tokenUsage);
+      logger.request(req.method, fullPath, res.statusCode, Date.now() - start, clientIp, res.locals.tokenUsage, res.locals.tokenEmail, res.locals.model);
     });
   }
   next();

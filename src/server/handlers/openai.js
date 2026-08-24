@@ -55,6 +55,8 @@ export const handleOpenAIRequest = async (req, res) => {
 
       token = nextToken;
       tokenId = await tokenManager.getTokenId(token);
+      // 记录当前使用的账号到请求日志（重试切换账号时同步更新）
+      res.locals.tokenEmail = token.email || token.sub || tokenId.substring(0, 8);
       requestBody = generateRequestBody(messages, model, params, tools, token);
       if (isImageModel) {
         prepareImageRequest(requestBody);
