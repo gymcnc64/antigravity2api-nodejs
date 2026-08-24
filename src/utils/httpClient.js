@@ -9,7 +9,11 @@ import config from '../config/config.js';
 // ==================== DNS & 代理统一配置 ====================
 
 // 自定义 DNS 解析：优先 IPv4，失败则回退 IPv6
+// 当 config.forceIPv4 开启时（WARP 出口固定走 IPv4，规避 Google 对 WARP IPv6 段不稳定的地区判定），只解析 IPv4
 function customLookup(hostname, options, callback) {
+  if (config.forceIPv4) {
+    return dns.lookup(hostname, { ...options, family: 4 }, callback);
+  }
   dns.lookup(hostname, { ...options, family: 4 }, (err4, address4, family4) => {
     if (!err4 && address4) {
       return callback(null, address4, family4);

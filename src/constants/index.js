@@ -119,6 +119,13 @@ export const LONG_COOLDOWN_THRESHOLD = 60 * 60 * 1000;
  */
 export const SHORT_COOLDOWN_THRESHOLD = 3000;
 
+/**
+ * WARP 出口健康探测默认间隔（毫秒）- 3分钟
+ * 定时用当前代理发起轻量探测，检测到 Google 地区限制时自动重启换出口
+ * @type {number}
+ */
+export const DEFAULT_WARP_PROBE_INTERVAL_MS = 3 * 60 * 1000;
+
 // ==================== 生成参数默认值 ====================
 
 /**

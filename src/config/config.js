@@ -16,7 +16,8 @@ import {
   DEFAULT_MAX_IMAGES,
   MODEL_LIST_CACHE_TTL,
   DEFAULT_GENERATION_PARAMS,
-  MEMORY_CLEANUP_INTERVAL
+  MEMORY_CLEANUP_INTERVAL,
+  DEFAULT_WARP_PROBE_INTERVAL_MS
 } from '../constants/index.js';
 
 // 生成随机凭据的缓存
@@ -452,6 +453,13 @@ export function buildConfig(jsonConfig, upstreamCfg = {}) {
     alwaysUseCredits: jsonConfig.other?.alwaysUseCredits === true,
     // 是否在网络异常时自动调用系统 warp restart 命令（默认开启）
     autoRestartWarp: jsonConfig.other?.autoRestartWarp !== false,
+    // 出口健康自动探测：定时用当前代理发起轻量探测，若被 Google 判定地区受限
+    // 则自动重启 WARP 换出口，规避不稳定出口段（默认开启）
+    autoProbeWarp: jsonConfig.other?.autoProbeWarp !== false,
+    // 出口健康探测间隔（毫秒，默认 3 分钟）
+    warpProbeIntervalMs: Number.isFinite(jsonConfig.other?.warpProbeIntervalMs)
+      ? jsonConfig.other.warpProbeIntervalMs
+      : DEFAULT_WARP_PROBE_INTERVAL_MS,
 
     // ==================== Gemini CLI 配置 ====================
     geminicli: {

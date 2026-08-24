@@ -280,8 +280,10 @@ async function handleApiError(error, token, dumpId = null, modelName = null) {
   throw createApiError(`API请求失败 (${status}): ${errorBody}`, status, errorBody);
 }
 
-// 地区受限账号的隔离时长：24 小时（到期后自动重新尝试）
-const GEO_QUARANTINE_MS = 24 * 60 * 60 * 1000;
+// 地区受限账号的隔离时长：30 分钟
+// 根因是 WARP 出口 IP 段被 Google 间歇性判定为不支持地区（与账号无关），
+// 24 小时隔离会让多个账号同时失联导致服务不可用；30 分钟足够等出口自动恢复/被自动探测换掉
+const GEO_QUARANTINE_MS = 30 * 60 * 1000;
 // 每个模型组取一个代表性模型名，用于对全部组设置冷却
 const GROUP_SAMPLE_MODELS = {
   claude: 'claude-sonnet-4-6',

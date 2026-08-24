@@ -19,6 +19,7 @@ import { errorHandler } from '../utils/errors.js';
 import { getChunkPoolSize, clearChunkPool } from './stream.js';
 import ipBlockManager from '../utils/ipBlockManager.js';
 import apiKeyManager from '../auth/api_key_manager.js';
+import warpManager from '../utils/warpManager.js';
 
 // 路由模块
 import adminRouter from '../routes/admin.js';
@@ -240,6 +241,9 @@ server.listen(config.server.port, config.server.host, () => {
     logMaxMemory: config.log?.maxMemory
   });
   logger.info('WebSocket 日志服务已启动: /ws/logs');
+
+  // 启动 WARP 出口健康自动探测（检测到 Google 地区限制自动换出口）
+  warpManager.startHealthProbe();
 });
 
 server.on('error', (error) => {
@@ -262,6 +266,9 @@ const shutdown = () => {
   // 停止内存管理器
   memoryManager.stop();
   logger.info('已停止内存管理器');
+
+  // 停止 WARP 出口健康探测
+  warpManager.stopHealthProbe();
 
   // 关闭子进程请求器
   requesterManager.close();

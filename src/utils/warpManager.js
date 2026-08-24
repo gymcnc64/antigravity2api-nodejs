@@ -4,6 +4,8 @@ import log from './logger.js';
 import config from '../config/config.js';
 import { buildProxySetup } from './httpClient.js';
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
  * WARP 代理管理模块
  * 负责 Cloudflare WARP 客户端的状态检测、出口 IP 查询与智能自愈重启
@@ -14,6 +16,9 @@ class WarpManager {
     this.cooldownMs = 60 * 1000; // 60秒冷却时间，防止高并发下频繁重启
     this.isRestarting = false;
     this.defaultPort = 40000;
+    this._probeTimer = null;
+    this._probing = false;
+    this.lastProbeResult = null;
   }
 
   /**
@@ -258,6 +263,118 @@ class WarpManager {
       await this._execCmd('systemctl disable warp-google-update.timer warp-google-update.service 2>/dev/null || true');
       log.debug('[WARP] 已完成历史遗留定时服务检查与清理');
     } catch { }
+  }
+
+  // ==================== 出口健康自动探测 ====================
+
+  /**
+   * 探测当前 WARP 出口是否被 Google 接受（无 400 地区限制）
+   * 使用轻量级 fetchAvailableModels 请求，与真实聊天请求走同一地区校验链路
+   * @returns {Promise<{ healthy: boolean, reason?: string, message?: string }>}
+   */
+  async probeExitHealth() {
+    const proxyUrl = `socks5://127.0.0.1:${this.defaultPort}`;
+
+    try {
+      // 动态导入避免循环依赖
+      const { default: tokenManager } = await import('../auth/token_manager.js');
+      const { default: requesterManager } = await import('./requesterManager.js');
+
+      const token = await tokenManager.getToken();
+      if (!token) {
+        return { healthy: true, reason: 'no-token', message: '暂无可用 token，跳过探测' };
+      }
+
+      const headers = {
+        'Host': config.api.host,
+        'User-Agent': config.api.userAgent,
+        'Authorization': `Bearer ${token.access_token}`,
+        'Content-Type': 'application/json',
+        'Accept-Encoding': 'gzip'
+      };
+
+      await requesterManager.fetch(config.api.modelsUrl, {
+        method: 'POST',
+        headers,
+        body: {},
+        okStatus: [200]
+      });
+
+      // 探测通过：记录出口 IP（低频，避免日志刷屏）
+      this.lastProbeResult = { healthy: true, checkedAt: Date.now() };
+      return { healthy: true };
+    } catch (error) {
+      const message = error?.message || '';
+      if (error?.status === 400 && /location is not supported/i.test(message)) {
+        log.warn('[WARP-Health] ⚠️ 出口被 Google 判定为不支持地区 (400)');
+        this.lastProbeResult = { healthy: false, reason: 'geo-blocked', checkedAt: Date.now() };
+        return { healthy: false, reason: 'geo-blocked', message: message.slice(0, 120) };
+      }
+      // 网络抖动/其他错误不判定为地区问题（避免误重启出口），视为健康继续运行
+      if (error?.status || /dial tcp|connection refused|ECONNREFUSED/i.test(message)) {
+        log.debug(`[WARP-Health] 探测未通过但非地区问题: ${message.slice(0, 100)}`);
+      }
+      return { healthy: true, reason: 'unknown', message: message.slice(0, 120) };
+    }
+  }
+
+  /**
+   * 启动出口健康定时探测
+   * 探测到 400 地区限制时自动重启 WARP 换出口，换完后再次探测确认
+   */
+  startHealthProbe() {
+    if (this._probeTimer) return;
+    if (config.autoProbeWarp === false) {
+      log.info('[WARP-Health] 已关闭出口健康自动探测 (autoProbeWarp=false)');
+      return;
+    }
+
+    const intervalMs = Number(config.warpProbeIntervalMs) > 0
+      ? config.warpProbeIntervalMs
+      : 3 * 60 * 1000;
+
+    const runProbe = async () => {
+      if (this._probing || this.isRestarting) return;
+      this._probing = true;
+      try {
+        const result = await this.probeExitHealth();
+        if (result.healthy === false && result.reason === 'geo-blocked') {
+          log.warn('[WARP-Health] 🔄 出口地区受限，自动重启 WARP 换出口...');
+          await this.restartWarp('出口地区受限自动换出口');
+          // 等待 WARP 重建隧道后再确认一次
+          await sleep(10000);
+          const retryResult = await this.probeExitHealth();
+          if (retryResult.healthy === false && retryResult.reason === 'geo-blocked') {
+            log.error('[WARP-Health] ❌ 换出口后仍被判定地区受限，等待下轮探测');
+          } else {
+            log.info('[WARP-Health] ✓ 换出口后探测通过');
+          }
+        }
+      } catch (err) {
+        log.debug('[WARP-Health] 探测流程异常:', err.message);
+      } finally {
+        this._probing = false;
+      }
+    };
+
+    // 启动 30 秒后先执行一次，之后按配置间隔循环
+    setTimeout(() => {
+      runProbe();
+      this._probeTimer = setInterval(runProbe, intervalMs);
+      this._probeTimer.unref?.();
+    }, 30000);
+    log.info(`[WARP-Health] 出口健康自动探测已启动 (间隔 ${Math.round(intervalMs / 1000)}s)`);
+  }
+
+  /**
+   * 停止出口健康定时探测
+   */
+  stopHealthProbe() {
+    if (this._probeTimer) {
+      clearInterval(this._probeTimer);
+      this._probeTimer = null;
+      log.info('[WARP-Health] 出口健康自动探测已停止');
+    }
   }
 }
 
