@@ -289,6 +289,13 @@ class TokenManager {
       availableTokens = availableTokens.filter(({ tokenId }) => tokenId !== excludeTokenId);
     }
 
+    if (availableTokens.length === 0) {
+      // 紧急自愈：所有账号都不可用（多为 WARP 出口地区受限导致全部被冷却隔离），
+      // 自动解除冷却并触发换出口，避免服务持续返回"没有可用的token"
+      await this._emergencySelfHeal(modelId);
+      return null;
+    }
+
     const selected = this.strategy.selectToken(availableTokens);
     if (!selected) return null;
 
@@ -595,6 +602,41 @@ class TokenManager {
     } catch (error) {
       log.error('获取Token列表失败:', error.message);
       return [];
+    }
+  }
+
+  /**
+   * 紧急自愈：所有账号不可用（通常因 WARP 出口被 Google 判定地区受限，
+   * 隔离链把账号全部锁死）时，自动解除冷却并异步触发换出口。
+   * 带 30 秒节流，避免"隔离-解禁"循环刷屏。
+   * @param {string} modelId - 当前请求的模型
+   * @private
+   */
+  async _emergencySelfHeal(modelId) {
+    const now = Date.now();
+    if (now - (this._lastSelfHealAt || 0) < 30 * 1000) return;
+    this._lastSelfHealAt = now;
+
+    try {
+      const allCooldowns = tokenCooldownManager.getAllCooldowns() || {};
+      const cooldownCount = Object.keys(allCooldowns).length;
+      if (cooldownCount === 0) return;
+
+      log.error(
+        `[SelfHeal] 所有账号不可用（${cooldownCount} 个处于冷却隔离，模型: ${modelId || 'unknown'}），` +
+        `根因多为出口地区受限，自动解除全部冷却并换出口`
+      );
+      for (const tokenId of Object.keys(allCooldowns)) {
+        tokenCooldownManager.clearAllCooldowns(tokenId);
+      }
+
+      // 异步触发 WARP 换出口（restartWarp 自带 60s 冷却与并发锁）
+      try {
+        const { default: warpManager } = await import('../utils/warpManager.js');
+        warpManager.restartWarp('全部账号被隔离，自动换出口').catch(() => { });
+      } catch { }
+    } catch (error) {
+      log.warn('[SelfHeal] 紧急自愈失败:', error.message);
     }
   }
 
