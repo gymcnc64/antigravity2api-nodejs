@@ -281,7 +281,10 @@ async function handleApiError(error, token, dumpId = null, modelName = null) {
         warpManager.notifyGeoBlocked().catch(() => { });
       }
     } catch { /* 换出口失败不影响主流程 */ }
-    throw createApiError(`该账号所在地区不受支持，已自动隔离并切换其他账号。错误详情: ${errorBody}`, status, errorBody);
+    const accountLabel = token?.email || (token?.sub ? token.sub : '');
+    throw createApiError(
+      `该账号${accountLabel ? `（${accountLabel}）` : ''}所在地区不受支持，已自动隔离并切换其他账号。错误详情: ${errorBody}`,
+      status, errorBody);
   }
 
   throw createApiError(`API请求失败 (${status}): ${errorBody}`, status, errorBody);

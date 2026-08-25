@@ -332,8 +332,14 @@ export async function with429Retry(fn, maxRetries, options = {}, legacyOnAttempt
         ? `（上游提示≈${hint.explicitDelayMs}ms）`
         : '（上游未提示等待时间）';
 
+      // 取当前账号信息用于日志（优先 email，缺失时回退 tokenId 前 8 位）
+      const currentToken = getCurrentToken(retryOptions);
+      const accountName = currentToken?.email || (previousTokenId ? previousTokenId.substring(0, 8) : '');
+
       logger.warn(
         `${loggerPrefix}收到 ${errorType}，等待固定间隔 ${retryIntervalMs}ms 后进行第 ${nextAttempt} 次重试（共 ${retries} 次）` +
+        (accountName ? `（账号: ${accountName}）` : '') +
+        (modelId ? `（模型: ${modelId}）` : '') +
         hintText +
         (shouldUseCredits ? '（使用积分）' : '') +
         (canPollTokenForRetry ? '（重试前重新轮询可用Token）' : '')
