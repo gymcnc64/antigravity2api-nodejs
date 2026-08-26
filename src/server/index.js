@@ -101,11 +101,14 @@ app.use('/sdapi/v1', sdRouter);
 // ==================== API Key 验证中间件 ====================
 app.use((req, res, next) => {
   let providedKey = null;
+  // 路径大小写不敏感（Express 路由本身不区分大小写，此处需保持一致，
+  // 否则 /V1/ 等大写路径会绕过 Key 验证与使用统计）
+  const lowerPath = req.path.toLowerCase();
 
-  if (req.path.startsWith('/v1/') || req.path.startsWith('/cli/v1/')) {
+  if (lowerPath.startsWith('/v1/') || lowerPath.startsWith('/cli/v1/')) {
     const authHeader = req.headers.authorization || req.headers['x-api-key'];
     providedKey = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
-  } else if (req.path.startsWith('/v1beta/')) {
+  } else if (lowerPath.startsWith('/v1beta/')) {
     providedKey = req.query.key || req.headers['x-goog-api-key'];
   } else {
     return next();
