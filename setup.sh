@@ -84,7 +84,7 @@ fi
 
 # 6. 配置管理员信息与凭据
 echo
-echo "[5/8] 配置管理员信息与凭据..."
+echo "[5/9] 配置管理员信息与凭据..."
 
 SERVER_PUBLIC_IP=$(curl -s --connect-timeout 3 https://api.ipify.org || curl -s --connect-timeout 3 https://ifconfig.me || curl -s --connect-timeout 3 https://ipinfo.io/ip || echo "")
 
@@ -122,9 +122,64 @@ else
     echo "JWT_SECRET=$RANDOM_JWT_SECRET" >> .env
 fi
 
-# 7. Cloudflare WARP 一键集成与自动配置（可选）
+# 7. HTTPS 域名配置（可选）
 echo
-echo "[6/8] 检查 Cloudflare WARP 代理与 Google 地区解锁..."
+echo "[6/9] 配置 HTTPS 域名（可选）..."
+read -p "请输入域名（可选，留空则仅 HTTP 8045 端口）: " SSL_DOMAIN
+if [ -n "$SSL_DOMAIN" ]; then
+    echo "✓ 检测到域名 [${SSL_DOMAIN}]，将自动申请 SSL 证书并监听 443 端口"
+    echo "   ⚠️  请确保域名 ${SSL_DOMAIN} 的 DNS 已解析到本机公网 IP，且 80 端口未被占用"
+
+    # 安装 acme.sh
+    if [ ! -d "$HOME/.acme.sh" ]; then
+        echo "正在安装 acme.sh 证书签发工具..."
+        curl -fsSL https://get.acme.sh | sh -s email=admin@${SSL_DOMAIN}
+        if [ $? -ne 0 ]; then
+            echo "❌ acme.sh 安装失败，将跳过 HTTPS 配置（继续以 HTTP 8045 启动）"
+            SSL_DOMAIN=""
+        fi
+    fi
+fi
+
+if [ -n "$SSL_DOMAIN" ]; then
+    export PATH="$HOME/.acme.sh:$PATH"
+    ACME_BIN="$HOME/.acme.sh/acme.sh"
+
+    # 申请证书（standalone 模式，临时占用 80 端口）
+    echo "正在为 ${SSL_DOMAIN} 申请证书..."
+    "$ACME_BIN" --set-default-ca --server letsencrypt 2>/dev/null || true
+    "$ACME_BIN" --issue -d "$SSL_DOMAIN" --standalone -k ec-256 --force
+    if [ $? -ne 0 ]; then
+        echo "❌ 证书申请失败（请确认 DNS 解析与 80 端口可用），将跳过 HTTPS 配置（继续以 HTTP 8045 启动）"
+        SSL_DOMAIN=""
+    fi
+fi
+
+if [ -n "$SSL_DOMAIN" ]; then
+    # 安装证书到固定位置
+    sudo mkdir -p /etc/ssl/private /etc/ssl/certs
+    CERT_FILE="/etc/ssl/certs/${SSL_DOMAIN}.crt"
+    KEY_FILE="/etc/ssl/private/${SSL_DOMAIN}.key"
+    "$HOME/.acme.sh/acme.sh" --install-cert -d "$SSL_DOMAIN" --ecc \
+        --key-file "$KEY_FILE" \
+        --fullchain-file "$CERT_FILE" \
+        --reloadcmd "pm2 restart antigravity2api" 2>/dev/null || true
+
+    # 写入 .env 启用 HTTPS
+    sed -i.bak "/^SSL_CERT_FILE=/d;/^SSL_KEY_FILE=/d;/^HTTPS_PORT=/d" .env 2>/dev/null
+    echo "SSL_CERT_FILE=$CERT_FILE" >> .env
+    echo "SSL_KEY_FILE=$KEY_FILE" >> .env
+    echo "HTTPS_PORT=443" >> .env
+    rm -f .env.bak
+    echo "✓ SSL 证书已安装: $CERT_FILE"
+    echo "✓ 服务将同时监听 HTTPS 443 与 HTTP 8045"
+else
+    echo "💡 未配置域名，服务将以 HTTP 8045 端口运行（如需 HTTPS，可稍后修改 .env 并重新部署）"
+fi
+
+# 8. Cloudflare WARP 一键集成与自动配置（可选）
+echo
+echo "[7/9] 检查 Cloudflare WARP 代理与 Google 地区解锁..."
 INSTALL_WARP_CHOICE="n"
 if command -v warp-cli &> /dev/null; then
     echo "✓ 检测到系统已安装 Cloudflare WARP 客户端"
@@ -187,9 +242,9 @@ EOF_WARP_CONF
     fi
 fi
 
-# 8. 检测并自动全局安装 PM2
+# 9. 检测并自动全局安装 PM2
 echo
-echo "[7/8] 检查并安装 PM2 进程管理器..."
+echo "[8/9] 检查并安装 PM2 进程管理器..."
 if ! command -v pm2 &> /dev/null; then
     echo "正在全局安装 PM2..."
     npm install -g pm2
@@ -201,9 +256,9 @@ else
     echo "✓ PM2 已安装"
 fi
 
-# 9. 加入 PM2 服务与开机自启动
+# 10. 加入 PM2 服务与开机自启动
 echo
-echo "[8/8] 启动 PM2 进程守护并配置自启动..."
+echo "[9/9] 启动 PM2 进程守护并配置自启动..."
 # 清理死进程，确保以固定的绝对路径启动
 pm2 delete "$APP_NAME" > /dev/null 2>&1 || true
 
@@ -229,10 +284,17 @@ echo
 echo "📂 项目安装路径："
 echo "   - 绝对路径: ${PROJECT_ABS_PATH}"
 echo
-echo "🌐 服务访问信息 (HTTP 8045 端口)："
-echo "   - 公网管理后台: ${PUBLIC_URL}"
-echo "   - 本地管理后台: http://127.0.0.1:${PORT}"
-echo "   - API 基础地址: http://127.0.0.1:${PORT}/v1"
+if [ -n "$SSL_DOMAIN" ]; then
+    echo "🌐 服务访问信息 (HTTPS 443 + HTTP 8045)："
+    echo "   - 公网管理后台: https://${SSL_DOMAIN}"
+    echo "   - HTTP 调试端口: http://127.0.0.1:${PORT}"
+    echo "   - API 基础地址: https://${SSL_DOMAIN}/v1"
+else
+    echo "🌐 服务访问信息 (HTTP 8045 端口)："
+    echo "   - 公网管理后台: ${PUBLIC_URL}"
+    echo "   - 本地管理后台: http://127.0.0.1:${PORT}"
+    echo "   - API 基础地址: http://127.0.0.1:${PORT}/v1"
+fi
 echo "   - 管理员账号:   $ADMIN_USER"
 echo "   - 管理员密码:   $ADMIN_PASS"
 echo "   - 初始 API 密钥: $FINAL_API_KEY"

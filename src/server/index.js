@@ -5,6 +5,7 @@
 
 import express from 'express';
 import http from 'http';
+import https from 'https';
 import fs from 'fs';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -223,6 +224,30 @@ app.use((req, res, next) => {
 
 // ==================== 服务器启动 ====================
 const server = http.createServer(app);
+
+// ==================== HTTPS 支持（可选） ====================
+// 配置了 SSL_CERT_FILE / SSL_KEY_FILE（如 setup.sh 通过 acme.sh 签发的证书）时，
+// 额外监听 HTTPS_PORT（默认 443），HTTP 8045 端口保留用于内网调试
+let httpsServer = null;
+if (config.server.sslCertFile && config.server.sslKeyFile &&
+    fs.existsSync(config.server.sslCertFile) && fs.existsSync(config.server.sslKeyFile)) {
+  try {
+    const sslOptions = {
+      cert: fs.readFileSync(config.server.sslCertFile),
+      key: fs.readFileSync(config.server.sslKeyFile)
+    };
+    httpsServer = https.createServer(sslOptions, app);
+    httpsServer.listen(config.server.httpsPort, config.server.host, () => {
+      logger.info(`HTTPS 服务已启动: https://${config.server.host}:${config.server.httpsPort}`);
+    });
+    httpsServer.on('error', (error) => {
+      logger.error(`HTTPS 服务启动失败: ${error.message}`);
+    });
+  } catch (sslError) {
+    logger.error(`加载 SSL 证书失败，仅启动 HTTP 服务: ${sslError.message}`);
+    httpsServer = null;
+  }
+}
 
 // 导出 server 实例
 export { server };

@@ -388,7 +388,11 @@ export function buildConfig(jsonConfig, upstreamCfg = {}) {
       host: jsonConfig.server?.host || DEFAULT_SERVER_HOST,
       heartbeatInterval: jsonConfig.server?.heartbeatInterval || DEFAULT_HEARTBEAT_INTERVAL,
       // 内存定时清理频率：避免频繁扫描/GC 带来的性能损耗
-      memoryCleanupInterval: jsonConfig.server?.memoryCleanupInterval ?? MEMORY_CLEANUP_INTERVAL
+      memoryCleanupInterval: jsonConfig.server?.memoryCleanupInterval ?? MEMORY_CLEANUP_INTERVAL,
+      // HTTPS 支持（可选）：在 .env 配置 SSL_CERT_FILE / SSL_KEY_FILE / HTTPS_PORT 后自动启用
+      httpsPort: process.env.HTTPS_PORT ? parseInt(process.env.HTTPS_PORT, 10) : 443,
+      sslCertFile: process.env.SSL_CERT_FILE || null,
+      sslKeyFile: process.env.SSL_KEY_FILE || null
     },
     cache: {
       modelListTTL: jsonConfig.cache?.modelListTTL || MODEL_LIST_CACHE_TTL
