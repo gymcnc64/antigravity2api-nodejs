@@ -156,23 +156,42 @@ if [ -n "$SSL_DOMAIN" ]; then
 fi
 
 if [ -n "$SSL_DOMAIN" ]; then
-    # 安装证书到固定位置
+    # 安装证书到固定位置（acme.sh 以当前用户运行，写 /etc 需要 sudo 复制）
     sudo mkdir -p /etc/ssl/private /etc/ssl/certs
     CERT_FILE="/etc/ssl/certs/${SSL_DOMAIN}.crt"
     KEY_FILE="/etc/ssl/private/${SSL_DOMAIN}.key"
-    "$HOME/.acme.sh/acme.sh" --install-cert -d "$SSL_DOMAIN" --ecc \
-        --key-file "$KEY_FILE" \
-        --fullchain-file "$CERT_FILE" \
-        --reloadcmd "pm2 restart antigravity2api" 2>/dev/null || true
 
-    # 写入 .env 启用 HTTPS
-    sed -i.bak "/^SSL_CERT_FILE=/d;/^SSL_KEY_FILE=/d;/^HTTPS_PORT=/d" .env 2>/dev/null
-    echo "SSL_CERT_FILE=$CERT_FILE" >> .env
-    echo "SSL_KEY_FILE=$KEY_FILE" >> .env
-    echo "HTTPS_PORT=443" >> .env
-    rm -f .env.bak
-    echo "✓ SSL 证书已安装: $CERT_FILE"
-    echo "✓ 服务将同时监听 HTTPS 443 与 HTTP 8045"
+    # acme.sh 签发的证书默认存放在 ~/.acme.sh/<域名>_ecc/ 目录
+    ACME_DOMAIN_DIR="$HOME/.acme.sh/${SSL_DOMAIN}_ecc"
+    if [ -f "$ACME_DOMAIN_DIR/fullchain.cer" ] && [ -f "$ACME_DOMAIN_DIR/${SSL_DOMAIN}.key" ]; then
+        sudo cp "$ACME_DOMAIN_DIR/fullchain.cer" "$CERT_FILE" 2>/dev/null
+        sudo cp "$ACME_DOMAIN_DIR/${SSL_DOMAIN}.key" "$KEY_FILE" 2>/dev/null
+        sudo chmod 644 "$CERT_FILE" 2>/dev/null
+        sudo chmod 600 "$KEY_FILE" 2>/dev/null
+
+        # 配置自动续期（续期后自动重启服务生效）
+        "$HOME/.acme.sh/acme.sh" --install-cert -d "$SSL_DOMAIN" --ecc \
+            --key-file "$KEY_FILE" \
+            --fullchain-file "$CERT_FILE" \
+            --reloadcmd "pm2 restart antigravity2api" > /dev/null 2>&1 || true
+    fi
+
+    # 验证证书文件真实存在，不存在则视为失败并跳过 HTTPS
+    if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
+        # 写入 .env 启用 HTTPS
+        sed -i.bak "/^SSL_CERT_FILE=/d;/^SSL_KEY_FILE=/d;/^HTTPS_PORT=/d" .env 2>/dev/null
+        echo "SSL_CERT_FILE=$CERT_FILE" >> .env
+        echo "SSL_KEY_FILE=$KEY_FILE" >> .env
+        echo "HTTPS_PORT=443" >> .env
+        rm -f .env.bak
+        echo "✓ SSL 证书已安装: $CERT_FILE"
+        echo "✓ 服务将同时监听 HTTPS 443 与 HTTP 8045"
+    else
+        echo "❌ 证书文件未成功安装到 $CERT_FILE，跳过 HTTPS 配置（继续以 HTTP 8045 启动）"
+        sed -i.bak "/^SSL_CERT_FILE=/d;/^SSL_KEY_FILE=/d;/^HTTPS_PORT=/d" .env 2>/dev/null
+        rm -f .env.bak
+        SSL_DOMAIN=""
+    fi
 else
     echo "💡 未配置域名，服务将以 HTTP 8045 端口运行（如需 HTTPS，可稍后修改 .env 并重新部署）"
 fi
