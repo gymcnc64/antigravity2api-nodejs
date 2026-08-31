@@ -18,20 +18,30 @@ class ApiKeyManager {
         const content = fs.readFileSync(this.filePath, 'utf8');
         const data = JSON.parse(content);
         this.keys = Array.isArray(data.keys) ? data.keys : [];
+        this.ensureDefaultKey();
       } else {
         this.keys = [];
-        this.initializeDefaultKeys();
+        this.ensureDefaultKey();
       }
     } catch (error) {
       log.error('加载 API 密钥文件失败:', error.message);
       this.keys = [];
+      this.ensureDefaultKey();
     }
   }
 
-  initializeDefaultKeys() {
+  ensureDefaultKey() {
     const envApiKey = config.security?.apiKey || process.env.API_KEY;
-    if (envApiKey) {
-      this.keys.push({
+    if (!envApiKey) return null;
+
+    let defaultKey = this.keys.find(k => k.id === 'key_default');
+    if (!defaultKey) {
+      const existingByKey = this.keys.find(k => k.key === envApiKey);
+      if (existingByKey) {
+        return existingByKey;
+      }
+
+      defaultKey = {
         id: 'key_default',
         name: '默认密钥',
         key: envApiKey,
@@ -42,11 +52,19 @@ class ApiKeyManager {
           requests: 0,
           inputTokens: 0,
           outputTokens: 0,
-          totalTokens: 0
+          totalTokens: 0,
+          models: {}
         }
-      });
+      };
+      this.keys.unshift(defaultKey);
       this.saveToFile();
+    } else {
+      if (defaultKey.key !== envApiKey) {
+        defaultKey.key = envApiKey;
+        this.saveToFile();
+      }
     }
+    return defaultKey;
   }
 
   saveToFile() {
@@ -74,17 +92,10 @@ class ApiKeyManager {
   }
 
   validateKey(providedKey) {
-    // 如果系统中没有任何配置的 key 且未全局要求
-    if (this.keys.length === 0) {
-      const globalKey = config.security?.apiKey;
-      if (!globalKey) return { valid: true, keyInfo: null };
-      if (providedKey === globalKey) return { valid: true, keyInfo: { id: 'global', name: '全局密钥' } };
-      return { valid: false, keyInfo: null };
-    }
+    const globalKey = config.security?.apiKey || process.env.API_KEY;
 
     if (!providedKey) {
       const hasEnabledKeys = this.keys.some(k => k.enabled);
-      const globalKey = config.security?.apiKey;
       if (!hasEnabledKeys && !globalKey) {
         return { valid: true, keyInfo: null };
       }
@@ -92,7 +103,13 @@ class ApiKeyManager {
     }
 
     // 匹配 key
-    const match = this.keys.find(k => k.key === providedKey);
+    let match = this.keys.find(k => k.key === providedKey);
+
+    // 如果未在列表匹配到，但与全局环境变量/配置中的 API_KEY 一致，自动归属到默认密钥
+    if (!match && globalKey && providedKey === globalKey) {
+      match = this.ensureDefaultKey() || this.keys.find(k => k.id === 'key_default' || k.key === globalKey);
+    }
+
     if (match) {
       // 校验 enabled 及 maxTokens 额度超限检查
       if (!match.enabled) {
@@ -111,12 +128,6 @@ class ApiKeyManager {
       }
 
       return { valid: true, keyInfo: match };
-    }
-
-    // 兼容全局 key
-    const globalKey = config.security?.apiKey;
-    if (globalKey && providedKey === globalKey) {
-      return { valid: true, keyInfo: { id: 'global', name: '全局密钥' } };
     }
 
     return { valid: false, keyInfo: null };
@@ -193,7 +204,10 @@ class ApiKeyManager {
 
   recordUsage(keyId, usage, model = 'unknown') {
     if (!keyId) return;
-    const target = this.keys.find(k => k.id === keyId);
+    let target = this.keys.find(k => k.id === keyId);
+    if (!target && (keyId === 'global' || keyId === 'key_default')) {
+      target = this.ensureDefaultKey() || this.keys.find(k => k.id === 'key_default');
+    }
     if (!target) return;
 
     const inputTokens = Number(usage?.prompt_tokens || usage?.input_tokens || usage?.promptTokenCount || 0);
@@ -248,7 +262,13 @@ class ApiKeyManager {
   queryUsageReport(rawKey) {
     if (!rawKey || typeof rawKey !== 'string') return null;
     const cleanKey = rawKey.trim();
-    const target = this.keys.find(k => k.key === cleanKey);
+    let target = this.keys.find(k => k.key === cleanKey);
+    if (!target) {
+      const globalKey = config.security?.apiKey || process.env.API_KEY;
+      if (globalKey && cleanKey === globalKey) {
+        target = this.ensureDefaultKey() || this.keys.find(k => k.id === 'key_default');
+      }
+    }
     if (!target) return null;
 
     const totalTokens = target.usage?.totalTokens || 0;
