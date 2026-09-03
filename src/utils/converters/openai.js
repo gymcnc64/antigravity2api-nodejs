@@ -25,18 +25,22 @@ function extractImagesFromContent(content) {
   }
   if (Array.isArray(content)) {
     for (const item of content) {
-      if (item.type === 'text') {
-        result.text += item.text;
-      } else if (item.type === 'image_url') {
-        const imageUrl = item.image_url?.url || '';
-        const match = imageUrl.match(/^data:image\/(\w+);base64,(.+)$/);
-        if (match) {
-          result.images.push({
-            inlineData: {
-              mimeType: `image/${match[1]}`,
-              data: match[2]
-            }
-          });
+      if (typeof item === 'string') {
+        result.text += item;
+      } else if (item && typeof item === 'object') {
+        if (item.type === 'text' || typeof item.text === 'string') {
+          result.text += (item.text || '');
+        } else if (item.type === 'image_url') {
+          const imageUrl = item.image_url?.url || '';
+          const match = imageUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+          if (match) {
+            result.images.push({
+              inlineData: {
+                mimeType: `image/${match[1]}`,
+                data: match[2]
+              }
+            });
+          }
         }
       }
     }
@@ -45,17 +49,31 @@ function extractImagesFromContent(content) {
 }
 
 function handleAssistantMessage(message, antigravityMessages, enableThinking, actualModelName, sessionId, hasTools) {
+  const rawContent = message.content;
+  let textContent = '';
+  if (typeof rawContent === 'string') {
+    textContent = rawContent;
+  } else if (Array.isArray(rawContent)) {
+    for (const item of rawContent) {
+      if (typeof item === 'string') {
+        textContent += item;
+      } else if (item && typeof item === 'object' && (item.type === 'text' || typeof item.text === 'string')) {
+        textContent += (item.text || '');
+      }
+    }
+  }
+
   const hasToolCalls = message.tool_calls && message.tool_calls.length > 0;
-  const hasContent = message.content && message.content.trim() !== '';
+  const hasContent = textContent && textContent.trim() !== '';
   const { reasoningSignature, reasoningContent, toolSignature, toolContent } = getSignatureContext(sessionId, actualModelName, hasTools);
   
   const toolCalls = hasToolCalls
     ? message.tool_calls.map(toolCall => {
-      const safeName = processToolName(toolCall.function.name, sessionId, actualModelName);
+      const safeName = processToolName(toolCall.function?.name || '', sessionId, actualModelName);
       const signature = enableThinking
         ? (toolCall.thoughtSignature || toolSignature || message.thoughtSignature || reasoningSignature)
         : null;
-      return createFunctionCallPart(toolCall.id, safeName, toolCall.function.arguments, signature);
+      return createFunctionCallPart(toolCall.id, safeName, toolCall.function?.arguments, signature);
     })
     : [];
 
@@ -85,7 +103,7 @@ function handleAssistantMessage(message, antigravityMessages, enableThinking, ac
     }
   }
   if (hasContent) {
-    const part = { text: message.content.trimEnd() };
+    const part = { text: textContent.trimEnd() };
     parts.push(part);
   }
   if (!enableThinking && parts[0]) delete parts[0].thoughtSignature;
@@ -95,7 +113,17 @@ function handleAssistantMessage(message, antigravityMessages, enableThinking, ac
 
 function handleToolCall(message, antigravityMessages) {
   const functionName = findFunctionNameById(message.tool_call_id, antigravityMessages);
-  pushFunctionResponse(message.tool_call_id, functionName, message.content, antigravityMessages);
+  let resultContent = '';
+  if (typeof message.content === 'string') {
+    resultContent = message.content;
+  } else if (Array.isArray(message.content)) {
+    resultContent = message.content
+      .map(item => (typeof item === 'string' ? item : (item?.text || '')))
+      .join('');
+  } else if (message.content !== undefined && message.content !== null) {
+    resultContent = String(message.content);
+  }
+  pushFunctionResponse(message.tool_call_id, functionName, resultContent, antigravityMessages);
 }
 
 function openaiMessageToAntigravity(openaiMessages, enableThinking, actualModelName, sessionId, hasTools) {

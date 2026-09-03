@@ -153,6 +153,12 @@ export function modelMapping(modelName) {
   if (modelName === 'gemini-3.7-pro') return 'gemini-3.7-pro';
   if (modelName === 'gemini-3.6-flash') return 'gemini-3.6-flash';
   if (modelName === 'gemini-3.5-flash') return 'gemini-3.5-flash';
+
+  // 兼容 gemini-3.8 / 3.9 等未来衍生变体或带思考后缀模型别名
+  if (modelName.startsWith('gemini-3.8-flash')) return 'gemini-3.7-flash-tiered';
+  if (modelName.startsWith('gemini-3.8-pro')) return 'gemini-3.7-pro';
+  if (modelName === 'gemini-3.8') return 'gemini-3.7-flash-tiered';
+
   return modelName;
 }
 
