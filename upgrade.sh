@@ -97,9 +97,53 @@ if [ -f "config.json" ]; then
     ' 2>/dev/null || true
 fi
 
-# 7. 平滑重启 PM2 进程
+# 7. 部署出口风控自愈看门狗（地区限制/隧道断连自动切换出口）
 echo
-echo "[5/5] 重启 PM2 进程守护..."
+echo "[5/6] 部署出口风控自愈看门狗..."
+if [ -f "scripts/exit-watchdog.sh" ]; then
+    sudo cp scripts/exit-watchdog.sh /usr/local/bin/exit-watchdog.sh
+    sudo chmod +x /usr/local/bin/exit-watchdog.sh
+
+    # 安装 systemd 服务与定时器（每 5 分钟检测一次）
+    sudo tee /etc/systemd/system/exit-watchdog.service > /dev/null <<'WD_SVC'
+[Unit]
+Description=Exit watchdog one-shot check
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/exit-watchdog.sh
+TimeoutStartSec=240
+WD_SVC
+
+    sudo tee /etc/systemd/system/exit-watchdog.timer > /dev/null <<'WD_TIMER'
+[Unit]
+Description=Exit watchdog - check geo-block and switch exits every 5 min
+After=network-online.target
+
+[Timer]
+OnBootSec=120
+OnUnitActiveSec=300
+AccuracySec=30
+
+[Install]
+WantedBy=timers.target
+WD_TIMER
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now exit-watchdog.timer 2>/dev/null || true
+    if sudo systemctl is-active --quiet exit-watchdog.timer; then
+        echo "✓ 出口风控自愈看门狗已就绪（每 5 分钟检测地区限制/隧道断连，自动切换出口）"
+    else
+        echo "⚠️ 看门狗定时器启动失败，请手动检查 systemctl status exit-watchdog.timer"
+    fi
+else
+    echo "💡 未找到 scripts/exit-watchdog.sh，跳过看门狗部署。"
+fi
+
+# 8. 平滑重启 PM2 进程
+echo
+echo "[6/6] 重启 PM2 进程守护..."
 if command -v pm2 &> /dev/null; then
     pm2 restart "$APP_NAME" || pm2 start src/server/index.js --name "$APP_NAME" --node-args="--expose-gc"
     pm2 save
@@ -115,4 +159,5 @@ echo "=========================================================="
 echo "1. 底层已全面切换为 WireGuard 协议模式，彻底根除抖动断连"
 echo "2. 历史遗留定时器已完全禁用，杜绝误杀重启"
 echo "3. 服务层已配置 3 次 / 2000ms 自动平滑重试与 60s 智能防抖换 IP"
+echo "4. 出口风控自愈：地区限制/隧道断连时自动切换出口并重启服务"
 echo "=========================================================="
