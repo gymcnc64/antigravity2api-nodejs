@@ -461,3 +461,520 @@ input:checked + .slider:before {
     border-radius: 50%;
     cursor: help;
 }
+
+
+/* ===== 回填：原有组件类（适配新版设计令牌） ===== */
+
+
+@keyframes slideIn {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+
+    to {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+}
+
+
+
+@keyframes modalBgIn {
+    from {
+        opacity: 0;
+        backdrop-filter: blur(0px);
+        -webkit-backdrop-filter: blur(0px);
+    }
+
+    to {
+        opacity: 1;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+    }
+}
+
+
+
+.modal-content.modal-lg {
+    max-width: 700px;
+}
+
+
+
+.modal-content.modal-xl {
+    max-width: 900px;
+    display: flex;
+    flex-direction: column;
+    max-height: 80vh;
+    overflow: hidden;
+}
+
+
+
+.modal-content.modal-xl .quota-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+
+
+.modal-content.modal-xl .modal-actions {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+    margin-top: 0.5rem;
+    background: transparent;
+}
+
+
+
+.modal-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.75rem;
+    color: var(--text);
+}
+
+
+
+.modal-message {
+    color: var(--text-light);
+    margin-bottom: 1rem;
+    line-height: 1.5;
+    font-size: 0.85rem;
+}
+
+
+
+.modal-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+
+
+
+.modal-actions button {
+    flex: none;
+    width: auto;
+}
+
+
+
+.form-modal .modal-content {
+    max-width: 480px;
+}
+
+
+
+.form-modal input {
+    margin-bottom: 0.75rem;
+}
+
+
+
+.form-modal .form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+
+
+.form-modal .oauth-steps {
+    background: rgba(59, 130, 246, 0.1);
+    padding: 0.875rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+    border: 1.5px solid var(--info);
+    color: var(--text);
+}
+
+
+
+.form-modal .oauth-steps p {
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text);
+}
+
+
+
+.form-modal .oauth-steps p:last-child {
+    margin-bottom: 0;
+}
+
+
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+
+
+@keyframes scaleIn {
+    from {
+        transform: scale(0.95);
+        opacity: 0;
+    }
+
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+
+
+/* Loading遮罩 */
+.loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+
+
+
+.loading-text {
+    color: white;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+
+
+/* 恢复默认按钮 */
+.restore-default {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 9px;
+    background: transparent;
+    border: 1.5px solid var(--border);
+    color: var(--text-light);
+    font-size: 0.7rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-left: 4px;
+    transition: all 0.2s ease;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+
+
+.restore-default:hover {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+
+
+.restore-default:active {
+    transform: scale(0.95);
+}
+
+
+
+/* 解锁按钮 */
+.unlock-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: transparent;
+    border: 1.5px solid var(--border);
+    color: var(--text-light);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-left: 4px;
+    transition: all 0.2s ease;
+    vertical-align: middle;
+}
+
+
+
+.unlock-btn:hover {
+    background: var(--warning);
+    border-color: var(--warning);
+    color: white;
+}
+
+
+
+.unlock-btn:active {
+    transform: scale(0.9);
+}
+
+
+
+/* Textarea wrapper for lock button */
+.textarea-wrapper {
+    position: relative;
+}
+
+
+
+/* Floating lock button inside textarea */
+.textarea-lock-btn {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.5rem;
+    cursor: pointer;
+    opacity: 0.9;
+    transition: all 0.2s;
+    z-index: 5;
+    background: var(--card);
+    padding: 0;
+    border-radius: 50%;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--border);
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+
+
+.textarea-lock-btn:hover {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.1);
+    border-color: var(--warning);
+    color: var(--warning);
+}
+
+
+
+/* Hide lock button when textarea is unlocked (not readonly) */
+.textarea-wrapper textarea:not([readonly])~.textarea-lock-btn {
+    display: none !important;
+}
+
+
+
+/* 开关样式 */
+.switch-row {
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    background: color-mix(in srgb, var(--primary) 8%, transparent);
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in srgb, var(--primary) 15%, transparent);
+    align-items: center;
+}
+
+
+
+.switch-group {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    background: var(--card);
+    padding: 0.375rem 0.625rem;
+    border-radius: 0.375rem;
+    flex: 1 1 auto;
+    min-width: 140px;
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+    min-height: 36px;
+}
+
+
+
+.switch-group:hover {
+    border-color: var(--primary);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+
+
+.switch-group label:first-child {
+    flex: 1;
+    margin-bottom: 0;
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+}
+
+
+
+/* 订阅徽章样式 */
+.subscription-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.625rem;
+    border-radius: 0.375rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    transition: all 0.2s;
+}
+
+
+
+.subscription-badge.free-tier {
+    background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+    color: white;
+    box-shadow: 0 2px 4px rgba(100, 116, 139, 0.2);
+}
+
+
+
+.subscription-badge.paid-tier {
+    background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+    color: white;
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--primary) 30%, transparent);
+    animation: shimmer 3s ease-in-out infinite;
+}
+
+
+
+@keyframes shimmer {
+    0%, 100% {
+        box-shadow: 0 2px 4px color-mix(in srgb, var(--primary) 30%, transparent);
+    }
+    50% {
+        box-shadow: 0 4px 8px color-mix(in srgb, var(--primary) 50%, transparent), 0 0 12px color-mix(in srgb, var(--primary) 30%, transparent);
+    }
+}
+
+
+
+/* 积分显示样式 */
+.credits-display {
+    display: inline-flex;
+    align-items: center;
+    font-weight: 600;
+    color: var(--primary);
+    font-variant-numeric: tabular-nums;
+}
+
+
+
+/* Token 卡片中的信息行样式优化 */
+.token-info .info-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0;
+}
+
+
+
+.token-info .info-row .info-label {
+    flex-shrink: 0;
+    font-size: 1rem;
+}
+
+
+
+.token-info .info-row .info-value {
+    flex: 1;
+    font-size: 0.8rem;
+    color: var(--text);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+
+
+/* Token 卡片头部的订阅和积分显示 */
+.status-subscription {
+    margin-left: 0;
+    font-size: 0.65rem;
+    padding: 0.2rem 0.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 5rem;
+}
+
+
+
+.status-credits {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 0;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: white;
+    box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 5.75rem;
+}
+
+
+
+.status-credits.no-credits {
+    background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+    opacity: 0.7;
+}
+
+
+
+.status-credits.credits-empty {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+}
