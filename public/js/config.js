@@ -223,6 +223,10 @@ async function loadConfig() {
             if (typeof loadWarpStatus === 'function') {
                 loadWarpStatus();
             }
+            // 加载 代理池 状态
+            if (typeof loadProxyPoolStatus === 'function') {
+                loadProxyPoolStatus();
+            }
         }
     } catch (error) {
         showToast('加载配置失败: ' + error.message, 'error');
@@ -306,7 +310,7 @@ async function saveConfig(e) {
     const formData = new FormData(form);
     const allConfig = Object.fromEntries(formData);
 
-    const sensitiveKeys = ['API_KEY', 'ADMIN_USERNAME', 'ADMIN_PASSWORD', 'JWT_SECRET', 'PROXY', 'SYSTEM_INSTRUCTION', 'OFFICIAL_SYSTEM_PROMPT', 'IMAGE_BASE_URL'];
+    const sensitiveKeys = ['API_KEY', 'ADMIN_USERNAME', 'ADMIN_PASSWORD', 'JWT_SECRET', 'PROXY', 'PROXY_LIST', 'PROXY_API_URL', 'SYSTEM_INSTRUCTION', 'OFFICIAL_SYSTEM_PROMPT', 'IMAGE_BASE_URL'];
     const envConfig = {};
     const jsonConfig = {
         server: {},
@@ -604,6 +608,118 @@ async function applyWarpProxy() {
         }
     } catch (err) {
         showToast('请求异常: ' + err.message, 'error');
+    }
+}
+
+/**
+ * 加载并渲染代理池状态
+ */
+async function loadProxyPoolStatus() {
+    const badge = document.getElementById('proxyPoolBadge');
+    const summary = document.getElementById('proxyPoolSummary');
+    const container = document.getElementById('proxyNodesContainer');
+
+    try {
+        const resp = await authFetch('/admin/proxy-pool');
+        const res = await resp.json();
+        if (!res.success || !res.data) return;
+
+        const data = res.data;
+        if (badge) {
+            if (data.totalCount > 0) {
+                badge.textContent = `${data.healthyCount}/${data.totalCount} 节点健康`;
+                badge.style.background = data.healthyCount > 0 ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)';
+                badge.style.color = data.healthyCount > 0 ? '#10b981' : '#ef4444';
+            } else {
+                badge.textContent = '未启用代理池';
+                badge.style.background = 'rgba(100,116,139,0.15)';
+                badge.style.color = '#64748b';
+            }
+        }
+
+        if (summary) {
+            summary.textContent = `策略: ${data.strategy} | 静态: ${data.staticCount} | API: ${data.apiCount}`;
+        }
+
+        if (container) {
+            if (!data.nodes || data.nodes.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-light); text-align: center; padding: 6px;">代理池为空（仅使用单代理或直连）</div>';
+            } else {
+                let html = '<table style="width:100%; border-collapse: collapse;">';
+                html += '<tr style="color: var(--text-light); border-bottom: 1px solid var(--border);"><th style="text-align:left; padding:4px;">节点</th><th style="text-align:left; padding:4px;">来源</th><th style="text-align:left; padding:4px;">状态</th><th style="text-align:right; padding:4px;">延迟</th></tr>';
+                for (const node of data.nodes) {
+                    const statusText = node.healthy ? '🟢 正常' : `🔴 熔断冷却中 (${node.cooldownRemainingSec}s)`;
+                    const latencyText = node.latency !== null ? `${node.latency}ms` : '-';
+                    const sourceText = node.source === 'api' ? 'API 动态' : '静态配置';
+                    html += `<tr style="border-bottom: 1px dashed rgba(255,255,255,0.05);">
+                        <td style="padding:4px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${node.maskedUrl}">${node.maskedUrl}</td>
+                        <td style="padding:4px;"><span style="font-size:0.72rem; padding:1px 4px; background:var(--card); border-radius:4px;">${sourceText}</span></td>
+                        <td style="padding:4px;">${statusText}</td>
+                        <td style="padding:4px; text-align:right; color: ${node.latency && node.latency < 800 ? '#10b981' : 'inherit'};">${latencyText}</td>
+                    </tr>`;
+                }
+                html += '</table>';
+                container.innerHTML = html;
+            }
+        }
+    } catch (e) {
+        if (summary) summary.textContent = '加载状态失败: ' + e.message;
+    }
+}
+
+/**
+ * 手动从 API 刷新代理池
+ */
+async function fetchProxyPoolFromApi() {
+    try {
+        showToast('正在从 API 拉取最新代理列表...', 'info');
+        const resp = await authFetch('/admin/proxy-pool/refresh', { method: 'POST' });
+        const res = await resp.json();
+        if (res.success) {
+            showToast(res.message || 'API 代理已更新', 'success');
+            loadProxyPoolStatus();
+        } else {
+            showToast(res.message || '拉取失败', 'error');
+        }
+    } catch (e) {
+        showToast('API 拉取异常: ' + e.message, 'error');
+    }
+}
+
+/**
+ * 批量测试代理池节点
+ */
+async function testAllProxyNodes() {
+    try {
+        showToast('正在测试所有代理节点的连通性与延迟...', 'info');
+        const resp = await authFetch('/admin/proxy-pool/test', { method: 'POST' });
+        const res = await resp.json();
+        if (res.success) {
+            showToast('节点测试完成', 'success');
+            loadProxyPoolStatus();
+        } else {
+            showToast(res.message || '测试失败', 'error');
+        }
+    } catch (e) {
+        showToast('测试异常: ' + e.message, 'error');
+    }
+}
+
+/**
+ * 手动轮换下一个节点
+ */
+async function rotateProxyNode() {
+    try {
+        const resp = await authFetch('/admin/proxy-pool/rotate', { method: 'POST' });
+        const res = await resp.json();
+        if (res.success) {
+            showToast(`已切换至下一个节点: ${res.currentProxy || '无'}`, 'success');
+            loadProxyPoolStatus();
+        } else {
+            showToast(res.message || '切换失败', 'error');
+        }
+    } catch (e) {
+        showToast('轮换异常: ' + e.message, 'error');
     }
 }
 

@@ -4,6 +4,7 @@ import tokenCooldownManager from '../../../auth/token_cooldown_manager.js';
 import { getGroupKey } from '../../../utils/modelGroups.js';
 import { hasOtherAvailableModelGroups, getAvailableModelGroups } from '../../../utils/tokenQuotaHelper.js';
 import { isGeoLocationRestrictedError, safeStringify } from '../../../api/upstreamError.js';
+import proxyPoolManager from '../../../utils/proxyManager.js';
 import logger from '../../../utils/logger.js';
 
 /**
@@ -344,6 +345,12 @@ export async function with429Retry(fn, maxRetries, options = {}, legacyOnAttempt
         (shouldUseCredits ? '（使用积分）' : '') +
         (canPollTokenForRetry ? '（重试前重新轮询可用Token）' : '')
       );
+
+      if (geoRestricted || isNetworkRetryable || status === 503) {
+        try {
+          proxyPoolManager.rotateProxy(`上游异常 [${errorType}] 自动切换`);
+        } catch { }
+      }
 
       await sleep(retryIntervalMs);
 

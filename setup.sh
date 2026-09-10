@@ -261,9 +261,94 @@ EOF_WARP_CONF
     fi
 fi
 
+# 8. SOCKS5 代理服务一键安装（可选）
+echo
+echo "[8/10] SOCKS5 代理服务端安装（可选，用于搭配多代理轮询）..."
+read -p "是否需要在此服务器上一键编译安装轻量 SOCKS5 服务端 (microsocks)？(y/N, 默认 N): " INSTALL_SOCKS5_CHOICE
+if [[ "$INSTALL_SOCKS5_CHOICE" =~ ^[Yy]$ ]]; then
+    echo "正在安装编译工具..."
+    if command -v apt-get &> /dev/null; then
+        sudo apt-get update -y && sudo apt-get install -y build-essential gcc make
+    elif command -v yum &> /dev/null; then
+        sudo yum install -y gcc make
+    elif command -v dnf &> /dev/null; then
+        sudo dnf install -y gcc make
+    fi
+
+    read -p "请输入 SOCKS5 监听端口 (默认: 40001): " SOCKS5_PORT
+    SOCKS5_PORT=${SOCKS5_PORT:-40001}
+    read -p "请输入 SOCKS5 用户名 (留空为免密): " SOCKS5_USER
+    read -p "请输入 SOCKS5 密码 (留空为免密): " SOCKS5_PASS
+
+    TMP_DIR=$(mktemp -d)
+    echo "正在下载并编译 microsocks 源码..."
+    if git clone https://github.com/rofl0r/microsocks.git "$TMP_DIR/microsocks" 2>/dev/null || curl -fsSL https://github.com/rofl0r/microsocks/archive/refs/heads/master.tar.gz | tar -xz -C "$TMP_DIR"; then
+        BUILD_DIR="$TMP_DIR/microsocks"
+        [ ! -d "$BUILD_DIR" ] && BUILD_DIR="$TMP_DIR/microsocks-master"
+        cd "$BUILD_DIR" && make
+        if [ -f "microsocks" ]; then
+            sudo cp microsocks /usr/local/bin/microsocks
+            sudo chmod +x /usr/local/bin/microsocks
+            echo "✓ microsocks 编译成功并已安装到 /usr/local/bin/microsocks"
+
+            AUTH_ARGS=""
+            PROXY_ITEM="socks5://127.0.0.1:${SOCKS5_PORT}"
+            if [ -n "$SOCKS5_USER" ] && [ -n "$SOCKS5_PASS" ]; then
+                AUTH_ARGS="-u $SOCKS5_USER -P $SOCKS5_PASS"
+                PROXY_ITEM="socks5://${SOCKS5_USER}:${SOCKS5_PASS}@127.0.0.1:${SOCKS5_PORT}"
+            fi
+
+            # 配置 systemd 服务
+            if [ -d "/etc/systemd/system" ]; then
+                cat << EOF_SOCKS_SVC | sudo tee /etc/systemd/system/microsocks.service > /dev/null
+[Unit]
+Description=MicroSocks SOCKS5 Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/microsocks -p ${SOCKS5_PORT} ${AUTH_ARGS}
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF_SOCKS_SVC
+                sudo systemctl daemon-reload
+                sudo systemctl enable microsocks
+                sudo systemctl restart microsocks
+                echo "✓ microsocks 系统服务已启动并开机自启"
+            else
+                nohup /usr/local/bin/microsocks -p ${SOCKS5_PORT} ${AUTH_ARGS} > /dev/null 2>&1 &
+                echo "✓ microsocks 后台进程已启动"
+            fi
+
+            # 自动将该节点并入 .env PROXY_LIST
+            if grep -q "^PROXY_LIST=" .env 2>/dev/null; then
+                EXISTING_LIST=$(grep "^PROXY_LIST=" .env | cut -d'=' -f2-)
+                if [ -n "$EXISTING_LIST" ]; then
+                    sed -i.bak "s|^PROXY_LIST=.*|PROXY_LIST=${EXISTING_LIST},${PROXY_ITEM}|" .env
+                else
+                    sed -i.bak "s|^PROXY_LIST=.*|PROXY_LIST=${PROXY_ITEM}|" .env
+                fi
+                rm -f .env.bak
+            else
+                echo "PROXY_LIST=${PROXY_ITEM}" >> .env
+            fi
+            echo "✓ 已将本地 SOCKS5 节点 [${PROXY_ITEM}] 写入 .env 中的 PROXY_LIST"
+        else
+            echo "⚠️ microsocks 编译失败，将跳过本地 SOCKS5 安装"
+        fi
+        cd "$PROJECT_ABS_PATH"
+        rm -rf "$TMP_DIR"
+    else
+        echo "⚠️ 获取 microsocks 源码失败，将跳过"
+    fi
+fi
+
 # 9. 检测并自动全局安装 PM2
 echo
-echo "[8/9] 检查并安装 PM2 进程管理器..."
+echo "[9/10] 检查并安装 PM2 进程管理器..."
 if ! command -v pm2 &> /dev/null; then
     echo "正在全局安装 PM2..."
     npm install -g pm2
@@ -277,7 +362,7 @@ fi
 
 # 10. 加入 PM2 服务与开机自启动
 echo
-echo "[9/9] 启动 PM2 进程守护并配置自启动..."
+echo "[10/10] 启动 PM2 进程守护并配置自启动..."
 # 清理死进程，确保以固定的绝对路径启动
 pm2 delete "$APP_NAME" > /dev/null 2>&1 || true
 

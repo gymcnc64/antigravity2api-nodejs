@@ -49,6 +49,10 @@
     "cacheImageSignatures": true,
     "cacheThinking": true,
     "fakeNonStream": false,
-    "alwaysUseCredits": false
+    "alwaysUseCredits": false,
+    "proxyStrategy": "round_robin",
+    "proxyMaxFailures": 3,
+    "proxyCooldownMs": 60000,
+    "proxyApiIntervalMs": 300000
   }
 }

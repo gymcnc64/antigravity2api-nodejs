@@ -6,6 +6,7 @@ import fingerprintRequester from '../requester.js';
 import config from '../config/config.js';
 import logger from './logger.js';
 import { buildAxiosRequestConfig } from './httpClient.js';
+import proxyPoolManager from './proxyManager.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -51,10 +52,11 @@ class RequesterManager {
         ? path.join(path.dirname(process.execPath), 'bin', 'tls_config.json')
         : path.join(__dirname, '..', 'bin', 'tls_config.json');
 
+      const currentProxy = proxyPoolManager.getProxy() || config.proxy;
       const requester = fingerprintRequester.create({
         configPath,
         timeout: config.timeout ? Math.ceil(config.timeout / 1000) : 30,
-        proxy: config.proxy || null,
+        proxy: currentProxy || null,
       });
 
       // 主动探测二进制文件是否可执行（捕获架构不匹配、文件损坏等运行时错误）
@@ -138,23 +140,28 @@ class RequesterManager {
    * @returns {Promise<{ status: number, data: any }>}
    *   data 为解析后的 JSON 对象（axios 路径）或原始文本（解析失败时）
    */
-  async fetch(url, { method = 'POST', headers = {}, body = null, okStatus = [200] } = {}) {
+  async fetch(url, { method = 'POST', headers = {}, body = null, okStatus = [200], proxy = null } = {}) {
     await this._ensureInit();
 
     if (this._useAxios || this._tlsCoolingDown) {
-      return this._axiosFetch(url, { method, headers, body, okStatus });
+      return this._axiosFetch(url, { method, headers, body, okStatus, proxy });
     }
 
     try {
-      return await this._tlsFetch(url, { method, headers, body, okStatus });
+      return await this._tlsFetch(url, { method, headers, body, okStatus, proxy });
     } catch (error) {
       if (!this._shouldFallbackToAxios(error)) {
         throw error;
       }
       logger.warn('[RequesterManager] FingerprintRequester 请求失败，自动降级使用 axios:', error.message);
+      // 上报代理故障
+      const activeProxy = proxy !== null ? proxy : (proxyPoolManager.getProxy() || config.proxy);
+      if (activeProxy) {
+        proxyPoolManager.markProxyFailed(activeProxy, error);
+      }
       // 瞬时网络故障：进入冷却期，到期后自动恢复 TLS 指纹路径
       this._tlsCooldownUntil = Date.now() + TLS_RETRY_COOLDOWN_MS;
-      return this._axiosFetch(url, { method, headers, body, okStatus });
+      return this._axiosFetch(url, { method, headers, body, okStatus, proxy });
     }
   }
 
@@ -166,25 +173,30 @@ class RequesterManager {
    * @param {string}  [options.method='POST']
    * @param {object}  [options.headers={}]
    * @param {*}       [options.body=null]
+   * @param {string}  [options.proxy=null]
    * @returns {Promise<StreamResponse | AxiosStreamResponse>}
    *   两者均实现 onStart/onData/onEnd/onError 链式调用接口
    */
-  async fetchStream(url, { method = 'POST', headers = {}, body = null } = {}) {
+  async fetchStream(url, { method = 'POST', headers = {}, body = null, proxy = null } = {}) {
     await this._ensureInit();
 
     if (this._useAxios || this._tlsCoolingDown) {
-      return this._axiosFetchStream(url, { method, headers, body });
+      return this._axiosFetchStream(url, { method, headers, body, proxy });
     }
 
     try {
-      return this._tlsFetchStream(url, { method, headers, body });
+      return this._tlsFetchStream(url, { method, headers, body, proxy });
     } catch (error) {
       if (!this._shouldFallbackToAxios(error)) {
         throw error;
       }
       logger.warn('[RequesterManager] FingerprintRequester 流式请求启动失败，自动降级使用 axios:', error.message);
+      const activeProxy = proxy !== null ? proxy : (proxyPoolManager.getProxy() || config.proxy);
+      if (activeProxy) {
+        proxyPoolManager.markProxyFailed(activeProxy, error);
+      }
       this._tlsCooldownUntil = Date.now() + TLS_RETRY_COOLDOWN_MS;
-      return this._axiosFetchStream(url, { method, headers, body });
+      return this._axiosFetchStream(url, { method, headers, body, proxy });
     }
   }
 
@@ -202,8 +214,8 @@ class RequesterManager {
 
   // ==================== TLS 路径 ====================
 
-  async _tlsFetch(url, { method, headers, body, okStatus }) {
-    const reqConfig = this._buildTlsConfig(method, headers, body);
+  async _tlsFetch(url, { method, headers, body, okStatus, proxy = null }) {
+    const reqConfig = this._buildTlsConfig(method, headers, body, proxy);
     const response = await this._tlsRequester.antigravity_fetch(url, reqConfig);
 
     if (!okStatus.includes(response.status)) {
@@ -223,17 +235,18 @@ class RequesterManager {
     return { status: response.status, data };
   }
 
-  _tlsFetchStream(url, { method, headers, body }) {
-    const reqConfig = this._buildTlsConfig(method, headers, body);
+  _tlsFetchStream(url, { method, headers, body, proxy = null }) {
+    const reqConfig = this._buildTlsConfig(method, headers, body, proxy);
     return this._tlsRequester.antigravity_fetchStream(url, reqConfig);
   }
 
-  _buildTlsConfig(method, headers, body) {
+  _buildTlsConfig(method, headers, body, proxy = null) {
+    const currentProxy = proxy !== null ? proxy : (proxyPoolManager.getProxy() || config.proxy);
     const reqConfig = {
       method,
       headers,
       timeout_ms: config.timeout,
-      proxy: config.proxy || null,
+      proxy: currentProxy || null,
     };
     if (body !== null) {
       // Buffer / Uint8Array 直接传递（但 TLS 请求器目前不支持二进制 body，调用方应使用 axios）
@@ -248,35 +261,43 @@ class RequesterManager {
 
   // ==================== axios 路径 ====================
 
-  async _axiosFetch(url, { method, headers, body, okStatus }) {
+  async _axiosFetch(url, { method, headers, body, okStatus, proxy = null }) {
     const axiosConfig = buildAxiosRequestConfig({
       method,
       url,
       headers,
       data: body,
       timeout: config.timeout,
+      proxy
     });
 
     // 对于非 2xx 状态码，axios 默认会抛错；这里统一处理
     axiosConfig.validateStatus = (status) => true;
 
-    const response = await axios(axiosConfig);
+    try {
+      const response = await axios(axiosConfig);
 
-    if (!okStatus.includes(response.status)) {
-      const errorBody = typeof response.data === 'string'
-        ? response.data
-        : JSON.stringify(response.data);
-      throw { status: response.status, message: errorBody };
+      if (!okStatus.includes(response.status)) {
+        const errorBody = typeof response.data === 'string'
+          ? response.data
+          : JSON.stringify(response.data);
+        throw { status: response.status, message: errorBody };
+      }
+
+      return { status: response.status, data: response.data };
+    } catch (err) {
+      if (axiosConfig.currentProxyUrl && (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.code === 'ENOTFOUND')) {
+        proxyPoolManager.markProxyFailed(axiosConfig.currentProxyUrl, err);
+      }
+      throw err;
     }
-
-    return { status: response.status, data: response.data };
   }
 
   /**
    * axios 流式 SSE 路径
    * 返回一个实现了 onStart/onData/onEnd/onError 接口的对象，与 TLS StreamResponse 兼容
    */
-  _axiosFetchStream(url, { method, headers, body }) {
+  _axiosFetchStream(url, { method, headers, body, proxy = null }) {
     const streamResponse = new AxiosStreamResponse();
 
     const axiosConfig = buildAxiosRequestConfig({
@@ -285,6 +306,7 @@ class RequesterManager {
       headers,
       data: body,
       timeout: config.timeout,
+      proxy
     });
     axiosConfig.responseType = 'stream';
 

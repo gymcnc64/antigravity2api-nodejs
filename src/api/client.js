@@ -273,9 +273,11 @@ async function handleApiError(error, token, dumpId = null, modelName = null) {
   // 地区限制：Google 判定该账号/位置不受支持（400 FAILED_PRECONDITION）
   // 注意：不再隔离账号。根因是出口 IP 被 Google 间歇性判定为不支持地区（与账号无关），
   // 隔离账号会在出口坏窗口内把全部账号锁死导致服务不可用（死锁）。
-  // 正确做法：仅触发换出口（若配置了代理），并让上层重试切换账号。
+  // 正确做法：仅触发换出口（若配置了代理池或单代理），并让上层重试切换账号。
   if (status === 400 && isGeoLocationRestrictedError(error)) {
     try {
+      const { default: proxyPoolManager } = await import('../utils/proxyManager.js');
+      proxyPoolManager.rotateProxy('Google 400 地区受限，自动切换代理');
       if (config.proxy) {
         const { default: warpManager } = await import('../utils/warpManager.js');
         warpManager.notifyGeoBlocked().catch(() => { });

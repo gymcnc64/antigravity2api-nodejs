@@ -44,6 +44,32 @@ export const MODEL_LIST_CACHE_TTL = 60 * 60 * 1000;
  */
 export const MEMORY_CLEANUP_INTERVAL = 30 * 60 * 1000;
 
+// ==================== 代理池相关常量 ====================
+
+/**
+ * 默认代理 API 拉取间隔（毫秒）- 5 分钟
+ * @type {number}
+ */
+export const DEFAULT_PROXY_API_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
+ * 默认代理节点连续失败熔断阈值（次）
+ * @type {number}
+ */
+export const DEFAULT_PROXY_MAX_FAILURES = 3;
+
+/**
+ * 默认代理节点熔断冷却时长（毫秒）- 1 分钟
+ * @type {number}
+ */
+export const DEFAULT_PROXY_COOLDOWN_MS = 60 * 1000;
+
+/**
+ * 默认代理轮询调度策略
+ * @type {string}
+ */
+export const DEFAULT_PROXY_STRATEGY = 'round_robin';
+
 // ==================== 服务器相关常量 ====================
 
 /**

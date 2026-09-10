@@ -17,7 +17,11 @@ import {
   MODEL_LIST_CACHE_TTL,
   DEFAULT_GENERATION_PARAMS,
   MEMORY_CLEANUP_INTERVAL,
-  DEFAULT_WARP_PROBE_INTERVAL_MS
+  DEFAULT_WARP_PROBE_INTERVAL_MS,
+  DEFAULT_PROXY_API_INTERVAL_MS,
+  DEFAULT_PROXY_MAX_FAILURES,
+  DEFAULT_PROXY_COOLDOWN_MS,
+  DEFAULT_PROXY_STRATEGY
 } from '../constants/index.js';
 
 // 生成随机凭据的缓存
@@ -257,6 +261,16 @@ export function getProxyConfig() {
   return systemProxy || null;
 }
 
+// 获取多节点代理列表配置（支持逗号/换行分隔的多代理）
+export function getProxyListConfig() {
+  return process.env.PROXY_LIST || null;
+}
+
+// 获取动态代理 API URL 配置
+export function getProxyApiUrlConfig() {
+  return process.env.PROXY_API_URL || null;
+}
+
 // 默认 API 配置（Antigravity）— upstream.json 不存在时的 hardcoded fallback
 const DEFAULT_API_CONFIGS = {
   sandbox: {
@@ -430,6 +444,21 @@ export function buildConfig(jsonConfig, upstreamCfg = {}) {
     retryIntervalMs: Number.isFinite(jsonConfig.other?.retryIntervalMs) ? jsonConfig.other.retryIntervalMs : DEFAULT_RETRY_INTERVAL_MS,
     retryPollTokenWithQuota: jsonConfig.other?.retryPollTokenWithQuota === true,
     proxy: getProxyConfig(),
+    // 多代理池与动态 API 配置
+    proxyPool: {
+      proxyList: getProxyListConfig(),
+      apiUrl: getProxyApiUrlConfig(),
+      apiIntervalMs: Number.isFinite(jsonConfig.other?.proxyApiIntervalMs)
+        ? jsonConfig.other.proxyApiIntervalMs
+        : (parseInt(process.env.PROXY_API_INTERVAL_MS, 10) || DEFAULT_PROXY_API_INTERVAL_MS),
+      strategy: jsonConfig.other?.proxyStrategy || process.env.PROXY_STRATEGY || DEFAULT_PROXY_STRATEGY,
+      maxFailures: Number.isFinite(jsonConfig.other?.proxyMaxFailures)
+        ? jsonConfig.other.proxyMaxFailures
+        : (parseInt(process.env.PROXY_MAX_FAILURES, 10) || DEFAULT_PROXY_MAX_FAILURES),
+      cooldownMs: Number.isFinite(jsonConfig.other?.proxyCooldownMs)
+        ? jsonConfig.other.proxyCooldownMs
+        : (parseInt(process.env.PROXY_COOLDOWN_MS, 10) || DEFAULT_PROXY_COOLDOWN_MS)
+    },
     // 反代系统提示词（从 .env 读取，可在前端修改，空字符串代表不使用）
     systemInstruction: process.env.SYSTEM_INSTRUCTION ?? '',
     // 官方系统提示词（从 .env 读取，可在前端修改，空字符串代表不使用）
@@ -488,7 +517,20 @@ export function buildConfig(jsonConfig, upstreamCfg = {}) {
   };
 }
 
+import proxyPoolManager from '../utils/proxyManager.js';
+
 const config = buildConfig(jsonConfig, upstreamConfig);
+
+// 初始化代理池管理器
+proxyPoolManager.init({
+  proxy: config.proxy,
+  proxyList: config.proxyPool?.proxyList,
+  apiUrl: config.proxyPool?.apiUrl,
+  apiIntervalMs: config.proxyPool?.apiIntervalMs,
+  strategy: config.proxyPool?.strategy,
+  maxFailures: config.proxyPool?.maxFailures,
+  cooldownMs: config.proxyPool?.cooldownMs
+});
 
 // 版本更新检查接口
 const VERSION_CHECK_URL = 'https://antigravity-auto-updater-974169037036.us-central1.run.app/releases';

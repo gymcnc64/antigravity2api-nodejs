@@ -46,7 +46,9 @@ if "%ADMIN_PASS%"=="" set ADMIN_PASS=admin123
 set /p API_KEY="Enter API key (default: sk-text): "
 if "%API_KEY%"=="" set API_KEY=sk-text
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$content = Get-Content .env -Raw -Encoding UTF8; $content = $content -replace '(?m)^# API_KEY=.*', ('API_KEY=' + '%API_KEY%'); $content = $content -replace '(?m)^# ADMIN_USERNAME=.*', ('ADMIN_USERNAME=' + '%ADMIN_USER%'); $content = $content -replace '(?m)^# ADMIN_PASSWORD=.*', ('ADMIN_PASSWORD=' + '%ADMIN_PASS%'); $content = $content -replace '(?m)^# JWT_SECRET=.*', 'JWT_SECRET=change-this-secret-key'; [System.IO.File]::WriteAllText((Resolve-Path .env), $content, (New-Object System.Text.UTF8Encoding $false))"
+set /p PROXY_INPUT="Enter SOCKS5 proxy or proxy pool (optional, e.g. socks5://127.0.0.1:1080): "
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$content = Get-Content .env -Raw -Encoding UTF8; $content = $content -replace '(?m)^# API_KEY=.*', ('API_KEY=' + '%API_KEY%'); $content = $content -replace '(?m)^# ADMIN_USERNAME=.*', ('ADMIN_USERNAME=' + '%ADMIN_USER%'); $content = $content -replace '(?m)^# ADMIN_PASSWORD=.*', ('ADMIN_PASSWORD=' + '%ADMIN_PASS%'); $content = $content -replace '(?m)^# JWT_SECRET=.*', 'JWT_SECRET=change-this-secret-key'; if ('%PROXY_INPUT%' -ne '') { $content = $content -replace '(?m)^# PROXY=.*', ('PROXY=' + '%PROXY_INPUT%') }; [System.IO.File]::WriteAllText((Resolve-Path .env), $content, (New-Object System.Text.UTF8Encoding $false))"
 
 echo.
 echo ========================================

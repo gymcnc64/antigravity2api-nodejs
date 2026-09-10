@@ -114,12 +114,25 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
 JWT_SECRET=your-jwt-secret-key-change-this-in-production
 
-# 可选配置（支持 HTTP / HTTPS / SOCKS5 代理，如内置 WARP）
+# 单代理配置（向后兼容）
 # PROXY=socks5://127.0.0.1:40000
+
+# 多节点 SOCKS5 代理池配置（支持逗号或换行分隔多个节点，自动 Round-Robin 轮询与熔断）
+# PROXY_LIST=socks5://127.0.0.1:40000,socks5://127.0.0.1:40001,socks5://user:pass@1.2.3.4:1080
+
+# 第三方代理提取 API（定时自动拉取更新代理池）
+# PROXY_API_URL=https://api.example.com/get_proxies?type=socks5
+# PROXY_API_INTERVAL_MS=300000
+
+# 代理池调度策略：round_robin (轮询) | random (随机) | failover (主备故障转移)
+# PROXY_STRATEGY=round_robin
 ```
 
-> **🌐 Cloudflare WARP 解锁与自愈提示**：
-> 本服务原生支持 SOCKS5 代理（推荐 `socks5://127.0.0.1:40000`）。在后台「系统设置」中，可一键应用 WARP 代理、查看出口 IP 与地理位置，并开启「异常自动换 IP」。当请求遭遇 Google 地区限制时，系统会自动将受限账号临时冷却隔离，并智能触发 WARP 重启更换公网出口。
+> **🌐 智能 SOCKS5 多节点轮询与 API 代理池特性**：
+> 1. **多节点轮询与负载均衡**：支持配置静态多代理列表（`PROXY_LIST`），按 Round-Robin、Random 或 Failover 策略自动调度。
+> 2. **外部 API 动态抓取**：配置 `PROXY_API_URL` 即可定时自动拉取第三方商业/公开代理，自适应兼容纯文本行或 JSON 格式。
+> 3. **连续故障熔断与自愈**：节点请求失败超过阈值自动进入冷却期并无缝切换至下一可用节点；探测或请求成功后自动恢复健康。
+> 4. **异常自动转移**：上游返回 400 地区限制（`FAILED_PRECONDITION`）或代理网络中断时，在重试中自动调度新节点。
 
 `config.json` 默认监听端口已设定为 `8045`：
 ```json

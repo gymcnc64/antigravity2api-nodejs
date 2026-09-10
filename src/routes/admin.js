@@ -25,6 +25,7 @@ import ipBlockManager from '../utils/ipBlockManager.js';
 import apiKeyManager from '../auth/api_key_manager.js';
 import { get2FAConfig, save2FAConfig, generateSecret, generateTOTP, verifyTOTP, generateBackupCodes, consumeBackupCode } from '../utils/totpManager.js';
 import warpManager from '../utils/warpManager.js';
+import proxyPoolManager from '../utils/proxyManager.js';
 import { server } from '../server/index.js';
 import dotenv from 'dotenv';
 
@@ -540,6 +541,68 @@ router.post('/test-proxy', cookieAuthMiddleware, async (req, res) => {
         proxy: proxyUrl
       }
     });
+  }
+});
+
+// ==================== 代理池管理路由 ====================
+
+// 获取代理池运行状态与所有节点健康度
+router.get('/proxy-pool', cookieAuthMiddleware, (req, res) => {
+  try {
+    const status = proxyPoolManager.getStatus();
+    res.json({ success: true, data: status });
+  } catch (error) {
+    logger.error('获取代理池状态失败:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 手动触发从 API 提取最新代理列表
+router.post('/proxy-pool/refresh', cookieAuthMiddleware, async (req, res) => {
+  try {
+    const result = await proxyPoolManager.fetchFromApi(true);
+    res.json(result);
+  } catch (error) {
+    logger.error('刷新 API 代理失败:', error.message);
+    res.status(500).json({ success: false, message: `拉取失败: ${error.message}` });
+  }
+});
+
+// 手动测试单个或所有代理节点的可用性与延迟
+router.post('/proxy-pool/test', cookieAuthMiddleware, async (req, res) => {
+  try {
+    const { proxyUrl = null } = req.body || {};
+    if (proxyUrl) {
+      const result = await proxyPoolManager.testNode(proxyUrl);
+      return res.json({ success: true, data: { [proxyUrl]: result } });
+    }
+
+    // 测试所有节点
+    const nodes = proxyPoolManager.getAllNodes();
+    if (!nodes.length) {
+      return res.json({ success: true, message: '代理池暂无已配置节点', data: {} });
+    }
+
+    const testResults = {};
+    await Promise.all(nodes.map(async (n) => {
+      const r = await proxyPoolManager.testNode(n.url);
+      testResults[n.url] = r;
+    }));
+
+    res.json({ success: true, data: testResults });
+  } catch (error) {
+    logger.error('测试代理节点失败:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 手动轮换到下一个代理节点
+router.post('/proxy-pool/rotate', cookieAuthMiddleware, (req, res) => {
+  try {
+    const nextProxy = proxyPoolManager.rotateProxy('管理员手动触发轮换');
+    res.json({ success: true, message: '代理已轮换', currentProxy: proxyPoolManager.maskProxyUrl(nextProxy) });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
