@@ -81,13 +81,15 @@
         }
 
         html.tab-settings .tab[data-tab="settings"] {
-            background: var(--primary, #4f46e5) !important;
-            color: white !important;
+            background: var(--background) !important;
+            color: var(--foreground) !important;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.1) !important;
+            font-weight: 600 !important;
         }
 
         html.tab-settings .tab[data-tab="logs"] {
             background: transparent !important;
-            color: var(--text-light, #888) !important;
+            color: var(--muted-foreground) !important;
         }
 
         html.tab-logs #tokensPage {
@@ -108,22 +110,24 @@
 
         html.tab-logs .tab[data-tab="tokens"] {
             background: transparent !important;
-            color: var(--text-light, #888) !important;
+            color: var(--muted-foreground) !important;
         }
 
         html.tab-logs .tab[data-tab="settings"] {
             background: transparent !important;
-            color: var(--text-light, #888) !important;
+            color: var(--muted-foreground) !important;
         }
 
         html.tab-logs .tab[data-tab="logs"] {
-            background: var(--primary, #4f46e5) !important;
-            color: white !important;
+            background: var(--background) !important;
+            color: var(--foreground) !important;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.1) !important;
+            font-weight: 600 !important;
         }
 
         html.tab-logs .tab[data-tab="geminicli"] {
             background: transparent !important;
-            color: var(--text-light, #888) !important;
+            color: var(--muted-foreground) !important;
         }
 
         /* Gemini CLI Tab 状态 */
@@ -145,22 +149,24 @@
 
         html.tab-geminicli .tab[data-tab="tokens"] {
             background: transparent !important;
-            color: var(--text-light, #888) !important;
+            color: var(--muted-foreground) !important;
         }
 
         html.tab-geminicli .tab[data-tab="settings"] {
             background: transparent !important;
-            color: var(--text-light, #888) !important;
+            color: var(--muted-foreground) !important;
         }
 
         html.tab-geminicli .tab[data-tab="logs"] {
             background: transparent !important;
-            color: var(--text-light, #888) !important;
+            color: var(--muted-foreground) !important;
         }
 
         html.tab-geminicli .tab[data-tab="geminicli"] {
-            background: var(--primary, #4f46e5) !important;
-            color: white !important;
+            background: var(--background) !important;
+            color: var(--foreground) !important;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.1) !important;
+            font-weight: 600 !important;
         }
 
         html.tab-settings #geminicliPage {
@@ -246,10 +252,10 @@
                     <label>🔑 密码</label>
                     <input type="password" id="password" required autocomplete="current-password">
                 </div>
-                <button type="submit">登录</button>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">登录</button>
             </form>
             <div style="text-align: center; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px dashed var(--border);">
-                <button type="button" onclick="showUsageQueryModal()" style="background: none; border: none; color: var(--primary); font-size: 0.88rem; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px; box-shadow: none; padding: 0.35rem 0.5rem; min-height: auto; width: auto; font-weight: 500;">
+                <button type="button" onclick="showUsageQueryModal()" style="background: none; border: none; color: var(--foreground); font-size: 0.825rem; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px; box-shadow: none; padding: 0.35rem 0.5rem; min-height: auto; width: auto; font-weight: 500;">
                     <span>📊</span> <span>API 密钥额度与使用量查询</span>
                 </button>
             </div>
@@ -258,10 +264,10 @@
         <!-- 主内容 -->
         <div id="mainContent" class="main-content hidden">
             <div class="header">
-            <div class="tabs" style="display: flex; align-items: center; gap: 0.5rem;">
+            <div class="tabs" style="display: flex; align-items: center; gap: 0.25rem;">
                 <div style="display: flex; align-items: center; gap: 6px; padding-right: 8px; margin-right: 4px; border-right: 1px solid var(--border);">
-                    <img src="assets/logo.svg" alt="Logo" style="width: 26px; height: 26px; border-radius: 6px;">
-                    <span style="font-weight: 700; font-size: 0.9rem; background: linear-gradient(135deg, var(--primary), #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Antigravity2API</span>
+                    <img src="assets/logo.svg" alt="Logo" style="width: 24px; height: 24px; border-radius: 6px;">
+                    <span style="font-weight: 700; font-size: 0.88rem; color: var(--foreground);">Antigravity2API</span>
                 </div>
                 <button class="tab active" data-tab="tokens" onclick="switchTab('tokens')"><span
                         class="tab-icon">🎯</span><span class="tab-text">Token</span></button>
@@ -277,7 +283,7 @@
                         class="tab-icon">📋</span><span class="tab-text">日志</span></button>
             </div>
                 <div class="header-right">
-                    <button onclick="logout()">🚪 退出</button>
+                    <button class="btn btn-outline btn-sm" onclick="logout()">🚪 退出</button>
                 </div>
             </div>
             <div class="content">
