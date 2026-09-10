@@ -29,6 +29,7 @@ import {
   dumpFinalRawResponse
 } from './debugDump.js';
 import { getUpstreamStatus, readUpstreamErrorBody, isCallerDoesNotHavePermission, isGeoLocationRestrictedError } from './upstreamError.js';
+import { prepareRequestBody, trimContentsToFit, estimateRequestTokens, isInputTooLongError, MODEL_INPUT_TOKEN_LIMIT } from '../utils/contextTrimmer.js';
 import { createStreamLineProcessor } from './streamLineProcessor.js';
 import { runSseStream, postJsonAndParse } from './geminiTransport.js';
 import { parseGeminiCandidateParts, toOpenAIUsage } from './geminiResponseParser.js';
@@ -289,6 +290,14 @@ async function handleApiError(error, token, dumpId = null, modelName = null) {
       status, errorBody);
   }
 
+  // 输入上下文超限：自动裁剪后仍失败（如单条消息本身超长），返回明确提示
+  if (status === 400 && isInputTooLongError(error)) {
+    throw createApiError(
+      `输入上下文超出模型上限（1048576 tokens），已自动裁剪最旧对话仍无法容纳，` +
+      `请在客户端压缩/减少上下文后重试。错误详情: ${errorBody}`,
+      status, errorBody);
+  }
+
   throw createApiError(`API请求失败 (${status}): ${errorBody}`, status, errorBody);
 }
 
@@ -351,42 +360,72 @@ export async function generateAssistantResponse(requestBody, token, callback) {
       return callback(...args);
     };
 
-    await withUpstreamFallback(async (candidate) => {
-      const targetUrl = candidate?.url || config.api.url;
-      const targetHost = candidate?.host || config.api.host;
-      const headers = buildHeaders(token, targetHost);
-      headers["Content-Length"] = String(Buffer.byteLength(JSON.stringify(requestBody)));
+    // 输入超限保护：上游限制输入 token ≤ 1048576，而客户端自报的上下文长度
+    // 不含服务端追加的系统提示词与工具定义，可能越界。发送前先估算裁剪，
+    // 若仍被上游以 INVALID_ARGUMENT 拒绝，则进一步裁剪重试。
+    let sendBody = prepareRequestBody(requestBody);
+    let trimRetries = 0;
+    const MAX_TRIM_RETRIES = 2;
 
-      // 每次 fallback 尝试都创建新的 state/processor（避免上一次尝试的脏状态）
-      const state = {
-        toolCalls: [],
-        reasoningSignature: null,
-        sessionId: requestBody.request?.sessionId,
-        model: requestBody.model
-      };
-      const processor = createStreamLineProcessor({
-        state,
-        onEvent: safeCallback,
-        onRawChunk: (chunk) => collectStreamChunk(streamCollector, chunk)
-      });
-
+    while (true) {
       try {
-        await runSseStream({
-          url: targetUrl,
-          headers,
-          body: requestBody,
-          processor,
-          onErrorChunk: (chunk) => collectStreamChunk(streamCollector, chunk)
+        await withUpstreamFallback(async (candidate) => {
+          const targetUrl = candidate?.url || config.api.url;
+          const targetHost = candidate?.host || config.api.host;
+          const headers = buildHeaders(token, targetHost);
+          headers["Content-Length"] = String(Buffer.byteLength(JSON.stringify(sendBody)));
+
+          // 每次 fallback 尝试都创建新的 state/processor（避免上一次尝试的脏状态）
+          const state = {
+            toolCalls: [],
+            reasoningSignature: null,
+            sessionId: sendBody.request?.sessionId,
+            model: sendBody.model
+          };
+          const processor = createStreamLineProcessor({
+            state,
+            onEvent: safeCallback,
+            onRawChunk: (chunk) => collectStreamChunk(streamCollector, chunk)
+          });
+
+          try {
+            await runSseStream({
+              url: targetUrl,
+              headers,
+              body: sendBody,
+              processor,
+              onErrorChunk: (chunk) => collectStreamChunk(streamCollector, chunk)
+            });
+          } catch (error) {
+            try { processor.close(); } catch { }
+            // 如果已经向客户端发送过数据，不能 fallback（否则客户端收到重复/混乱的流事件）
+            if (hasEmittedData) {
+              error._skipFallback = true;
+            }
+            throw error; // 让 withUpstreamFallback 判断是否 fallback
+          }
         });
+        break; // 发送成功
       } catch (error) {
-        try { processor.close(); } catch { }
-        // 如果已经向客户端发送过数据，不能 fallback（否则客户端收到重复/混乱的流事件）
-        if (hasEmittedData) {
-          error._skipFallback = true;
+        // 输入 token 越界：从最旧对话开始裁剪后重试（未向客户端发送过任何数据时才可安全重试）
+        if (!hasEmittedData && isInputTooLongError(error) && trimRetries < MAX_TRIM_RETRIES) {
+          trimRetries++;
+          // 上游已确认越界，逐级收紧目标（90% → 75%），确保估算误差也能覆盖
+          const target = Math.floor(MODEL_INPUT_TOKEN_LIMIT * (trimRetries === 1 ? 0.9 : 0.75));
+          const trimmed = trimContentsToFit(sendBody, target);
+          if (trimmed) {
+            logger.warn(
+              `[ContextTrim] 上游拒绝：输入 token 超过 1048576 上限，` +
+              `已裁剪最旧对话后重试（第 ${trimRetries}/${MAX_TRIM_RETRIES} 次，` +
+              `目标 ${target}，估算降至 ${estimateRequestTokens(trimmed)} tokens）`
+            );
+            sendBody = trimmed;
+            continue;
+          }
         }
-        throw error; // 让 withUpstreamFallback 判断是否 fallback
+        throw error;
       }
-    });
+    }
 
     // 流式响应结束后，以 JSON 格式写入日志
     if (dumpId) {
@@ -549,22 +588,50 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
 
   if (dumpId) await dumpFinalRequest(dumpId, requestBody);
   let data;
-  try {
-    data = await withUpstreamFallback(async (candidate) => {
-      const targetUrl = candidate?.noStreamUrl || config.api.noStreamUrl;
-      const targetHost = candidate?.host || config.api.host;
-      const headers = buildHeaders(token, targetHost);
-      headers["Content-Length"] = String(Buffer.byteLength(JSON.stringify(requestBody)));
 
-      return postJsonAndParse({
-        url: targetUrl,
-        headers,
-        body: requestBody,
-        dumpId,
-        dumpFinalRawResponse,
-        rawFormat: 'json'
-      });
-    });
+  // 输入超限保护：发送前估算裁剪，被上游拒绝时进一步裁剪重试
+  let sendBody = prepareRequestBody(requestBody);
+  let trimRetries = 0;
+  const MAX_TRIM_RETRIES = 2;
+
+  try {
+    while (true) {
+      try {
+        data = await withUpstreamFallback(async (candidate) => {
+          const targetUrl = candidate?.noStreamUrl || config.api.noStreamUrl;
+          const targetHost = candidate?.host || config.api.host;
+          const headers = buildHeaders(token, targetHost);
+          headers["Content-Length"] = String(Buffer.byteLength(JSON.stringify(sendBody)));
+
+          return postJsonAndParse({
+            url: targetUrl,
+            headers,
+            body: sendBody,
+            dumpId,
+            dumpFinalRawResponse,
+            rawFormat: 'json'
+          });
+        });
+        break; // 发送成功
+      } catch (error) {
+        if (isInputTooLongError(error) && trimRetries < MAX_TRIM_RETRIES) {
+          trimRetries++;
+          // 上游已确认越界，逐级收紧目标（90% → 75%），确保估算误差也能覆盖
+          const target = Math.floor(MODEL_INPUT_TOKEN_LIMIT * (trimRetries === 1 ? 0.9 : 0.75));
+          const trimmed = trimContentsToFit(sendBody, target);
+          if (trimmed) {
+            logger.warn(
+              `[ContextTrim] 上游拒绝：输入 token 超过 1048576 上限，` +
+              `已裁剪最旧对话后重试（第 ${trimRetries}/${MAX_TRIM_RETRIES} 次，` +
+              `目标 ${target}，估算降至 ${estimateRequestTokens(trimmed)} tokens）`
+            );
+            sendBody = trimmed;
+            continue;
+          }
+        }
+        throw error;
+      }
+    }
     sendRecordCodeAssistMetrics(token, trajectoryId).catch(err => logger.warn('发送RecordCodeAssistMetrics失败:', err.message));
     sendRecordTrajectoryAnalytics(token, num, trajectoryId, messageId, conversationId, modelName).catch(err => logger.warn('发送轨迹分析失败:', err.message));
     sendLog(token, num, trajectoryId, conversationId, messageId).catch(err => logger.warn('发送log失败:', err.message));
